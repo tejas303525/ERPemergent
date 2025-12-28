@@ -153,6 +153,12 @@ export default function QuotationsPage() {
     }
   };
 
+  const handleDownloadPDF = (quotationId, pfiNumber) => {
+    const token = localStorage.getItem('erp_token');
+    const url = pdfAPI.getQuotationUrl(quotationId);
+    window.open(`${url}?token=${token}`, '_blank');
+  };
+
   const resetForm = () => {
     setForm({
       customer_id: '',
