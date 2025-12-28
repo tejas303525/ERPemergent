@@ -1784,8 +1784,11 @@ def generate_blend_report_pdf(report: dict) -> BytesIO:
     return buffer
 
 @api_router.get("/pdf/cro/{booking_id}")
-async def download_cro_pdf(booking_id: str, current_user: dict = Depends(get_current_user)):
+async def download_cro_pdf(booking_id: str, token: Optional[str] = None, current_user: dict = Depends(get_current_user)):
     """Download CRO / Loading Instructions PDF"""
+    if token:
+        await get_user_from_token(token)
+    
     booking = await db.shipping_bookings.find_one({"id": booking_id}, {"_id": 0})
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found")
@@ -1806,8 +1809,11 @@ async def download_cro_pdf(booking_id: str, current_user: dict = Depends(get_cur
     )
 
 @api_router.get("/pdf/blend-report/{report_id}")
-async def download_blend_report_pdf(report_id: str, current_user: dict = Depends(get_current_user)):
+async def download_blend_report_pdf(report_id: str, token: Optional[str] = None, current_user: dict = Depends(get_current_user)):
     """Download Blend Report PDF"""
+    if token:
+        await get_user_from_token(token)
+    
     report = await db.blend_reports.find_one({"id": report_id}, {"_id": 0})
     if not report:
         raise HTTPException(status_code=404, detail="Blend report not found")
