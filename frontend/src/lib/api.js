@@ -152,6 +152,42 @@ export const productionAPI = {
   getProcurementList: () => api.get('/production/procurement-list'),
 };
 
+// Drums Production Scheduling (New)
+export const drumScheduleAPI = {
+  regenerate: (weekStart) => api.post(`/production/drum-schedule/regenerate?week_start=${weekStart}`),
+  getSchedule: (weekStart) => api.get('/production/drum-schedule', { params: { week_start: weekStart } }),
+  getCampaign: (campaignId) => api.get(`/production/campaign/${campaignId}`),
+  getArrivals: (weekStart) => api.get('/production/arrivals', { params: { week_start: weekStart } }),
+  approveSchedule: (weekStart) => api.post(`/production/schedule/approve?week_start=${weekStart}`),
+};
+
+// Packaging Management
+export const packagingAPI = {
+  getAll: (category) => api.get('/packaging', { params: { category } }),
+  create: (data) => api.post('/packaging', data),
+  update: (id, data) => api.put(`/packaging/${id}`, data),
+};
+
+// Inventory Items (RAW + PACK)
+export const inventoryItemAPI = {
+  getAll: (itemType) => api.get('/inventory-items', { params: { item_type: itemType } }),
+  create: (data) => api.post('/inventory-items', data),
+};
+
+// Purchase Orders
+export const purchaseOrderAPI = {
+  getAll: (status) => api.get('/purchase-orders', { params: { status } }),
+  getOne: (id) => api.get(`/purchase-orders/${id}`),
+  create: (data) => api.post('/purchase-orders', data),
+  createLine: (data) => api.post('/purchase-order-lines', data),
+  updateStatus: (id, status) => api.put(`/purchase-orders/${id}/status`, null, { params: { status } }),
+};
+
+// Procurement Requisitions
+export const procurementReqAPI = {
+  getAll: (status) => api.get('/procurement-requisitions', { params: { status } }),
+};
+
 // Blend Reports
 export const blendReportAPI = {
   getAll: (jobOrderId, status) => api.get('/blend-reports', { params: { job_order_id: jobOrderId, status } }),
