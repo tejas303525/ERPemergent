@@ -34,7 +34,7 @@ const menuItems = [
   { icon: ClipboardList, label: 'Delivery Orders', path: '/delivery-orders', roles: ['admin', 'security', 'shipping'] },
   { icon: Ship, label: 'Shipping', path: '/shipping', roles: ['admin', 'shipping'] },
   { icon: Truck, label: 'Transport', path: '/transport', roles: ['admin', 'transport'] },
-  { icon: Package, label: 'Dispatch Gate', path: '/dispatch-gate', roles: ['admin', 'security', 'shipping', 'transport'] },
+  { icon: DoorOpen, label: 'Dispatch Gate', path: '/dispatch-gate', roles: ['admin', 'security', 'shipping', 'transport'] },
   { icon: FileCheck, label: 'Documentation', path: '/documentation', roles: ['admin', 'documentation'] },
   { icon: ClipboardCheck, label: 'Quality Control', path: '/qc', roles: ['admin', 'qc'] },
   { icon: Users, label: 'Customers', path: '/customers', roles: ['admin', 'sales'] },
