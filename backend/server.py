@@ -116,7 +116,7 @@ class Product(ProductCreate):
 class QuotationItem(BaseModel):
     product_id: str
     product_name: str
-    sku: str
+    sku: Optional[str] = None  # Make optional for backwards compatibility
     quantity: float
     unit_price: float
     packaging: str = "Bulk"
