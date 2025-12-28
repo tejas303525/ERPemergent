@@ -961,11 +961,29 @@ async def create_transport_schedule(data: TransportScheduleCreate, current_user:
     if not booking:
         raise HTTPException(status_code=404, detail="Shipping booking not found")
     
+    # Get job order details
+    job_numbers = []
+    product_names = []
+    for job_id in booking.get("job_order_ids", []):
+        job = await db.job_orders.find_one({"id": job_id}, {"_id": 0})
+        if job:
+            job_numbers.append(job["job_number"])
+            product_names.append(job["product_name"])
+    
     schedule_number = await generate_sequence("TRN", "transport_schedules")
     schedule = TransportSchedule(
         **data.model_dump(),
         schedule_number=schedule_number,
         booking_number=booking["booking_number"],
+        cro_number=booking.get("cro_number"),
+        vessel_name=booking.get("vessel_name"),
+        vessel_date=booking.get("vessel_date"),
+        cutoff_date=booking.get("cutoff_date"),
+        container_type=booking["container_type"],
+        container_count=booking["container_count"],
+        port_of_loading=booking["port_of_loading"],
+        job_numbers=job_numbers,
+        product_names=product_names,
         created_by=current_user["id"]
     )
     await db.transport_schedules.insert_one(schedule.model_dump())
@@ -976,13 +994,23 @@ async def get_transport_schedules(status: Optional[str] = None, current_user: di
     query = {}
     if status:
         query["status"] = status
-    schedules = await db.transport_schedules.find(query, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    schedules = await db.transport_schedules.find(query, {"_id": 0}).sort("pickup_date", 1).to_list(1000)
+    return schedules
+
+@api_router.get("/transport-schedules/pending")
+async def get_pending_transport_schedules(current_user: dict = Depends(get_current_user)):
+    """Get transport schedules pending assignment (for transport department)"""
+    schedules = await db.transport_schedules.find(
+        {"status": {"$in": ["pending", "assigned"]}},
+        {"_id": 0}
+    ).sort("pickup_date", 1).to_list(1000)
     return schedules
 
 @api_router.put("/transport-schedules/{schedule_id}")
 async def update_transport_schedule(
     schedule_id: str,
     status: Optional[str] = None,
+    transporter: Optional[str] = None,
     vehicle_number: Optional[str] = None,
     driver_name: Optional[str] = None,
     driver_phone: Optional[str] = None,
@@ -991,6 +1019,8 @@ async def update_transport_schedule(
     update_data = {}
     if status:
         update_data["status"] = status
+    if transporter:
+        update_data["transporter"] = transporter
     if vehicle_number:
         update_data["vehicle_number"] = vehicle_number
     if driver_name:
@@ -1004,7 +1034,81 @@ async def update_transport_schedule(
     result = await db.transport_schedules.update_one({"id": schedule_id}, {"$set": update_data})
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Schedule not found")
+    
+    # Update dispatch schedule as well
+    if any([transporter, vehicle_number, driver_name, driver_phone]):
+        dispatch_update = {}
+        if transporter:
+            dispatch_update["transporter"] = transporter
+        if vehicle_number:
+            dispatch_update["vehicle_number"] = vehicle_number
+        if driver_name:
+            dispatch_update["driver_name"] = driver_name
+        if driver_phone:
+            dispatch_update["driver_phone"] = driver_phone
+        await db.dispatch_schedules.update_one(
+            {"transport_schedule_id": schedule_id},
+            {"$set": dispatch_update}
+        )
+    
     return {"message": "Schedule updated"}
+
+# ==================== DISPATCH ROUTES (Security View) ====================
+
+@api_router.get("/dispatch-schedules")
+async def get_dispatch_schedules(status: Optional[str] = None, current_user: dict = Depends(get_current_user)):
+    """Get dispatch schedules for security/dispatch department"""
+    query = {}
+    if status:
+        query["status"] = status
+    schedules = await db.dispatch_schedules.find(query, {"_id": 0}).sort("pickup_date", 1).to_list(1000)
+    return schedules
+
+@api_router.get("/dispatch-schedules/today")
+async def get_todays_dispatch_schedules(current_user: dict = Depends(get_current_user)):
+    """Get today's expected container arrivals for security"""
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    schedules = await db.dispatch_schedules.find(
+        {"pickup_date": today},
+        {"_id": 0}
+    ).sort("expected_arrival", 1).to_list(1000)
+    return schedules
+
+@api_router.get("/dispatch-schedules/upcoming")
+async def get_upcoming_dispatch_schedules(days: int = 7, current_user: dict = Depends(get_current_user)):
+    """Get upcoming container arrivals for the next N days"""
+    today = datetime.now(timezone.utc)
+    end_date = today + timedelta(days=days)
+    
+    schedules = await db.dispatch_schedules.find(
+        {
+            "pickup_date": {
+                "$gte": today.strftime("%Y-%m-%d"),
+                "$lte": end_date.strftime("%Y-%m-%d")
+            }
+        },
+        {"_id": 0}
+    ).sort("pickup_date", 1).to_list(1000)
+    return schedules
+
+@api_router.put("/dispatch-schedules/{schedule_id}/status")
+async def update_dispatch_status(schedule_id: str, status: str, current_user: dict = Depends(get_current_user)):
+    """Update dispatch status (for security to track loading progress)"""
+    valid_statuses = ["scheduled", "in_transit", "arrived", "loading", "loaded", "departed"]
+    if status not in valid_statuses:
+        raise HTTPException(status_code=400, detail=f"Invalid status. Must be one of: {valid_statuses}")
+    
+    update_data = {"status": status}
+    if status == "loading":
+        update_data["loading_start"] = datetime.now(timezone.utc).isoformat()
+    elif status == "loaded":
+        update_data["loading_end"] = datetime.now(timezone.utc).isoformat()
+    
+    result = await db.dispatch_schedules.update_one({"id": schedule_id}, {"$set": update_data})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Dispatch schedule not found")
+    
+    return {"message": f"Dispatch status updated to {status}"}
 
 # ==================== DOCUMENTATION ROUTES ====================
 
