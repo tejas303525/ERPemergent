@@ -76,9 +76,10 @@ class ERPTester:
                 return False
             
             # 2. Create raw materials
+            timestamp = int(time.time())
             raw_materials = [
                 {
-                    "sku": "RM001",
+                    "sku": f"RM001-{timestamp}",
                     "name": "Base Chemical A",
                     "description": "Primary base chemical",
                     "unit": "KG",
@@ -88,7 +89,7 @@ class ERPTester:
                     "min_stock": 100
                 },
                 {
-                    "sku": "RM002", 
+                    "sku": f"RM002-{timestamp}", 
                     "name": "Additive B",
                     "description": "Chemical additive",
                     "unit": "KG",
