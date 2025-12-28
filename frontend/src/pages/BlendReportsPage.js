@@ -143,10 +143,35 @@ export default function BlendReportsPage() {
     }
   };
 
-  const handleDownloadPDF = (reportId) => {
-    const token = localStorage.getItem('erp_token');
-    const url = pdfAPI.getBlendReportUrl(reportId);
-    window.open(`${url}?token=${token}`, '_blank');
+  const handleDownloadPDF = async (reportId, reportNumber) => {
+    try {
+      const token = localStorage.getItem('erp_token');
+      const url = pdfAPI.getBlendReportUrl(reportId);
+      
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to download PDF');
+      }
+      
+      const blob = await response.blob();
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = `BlendReport_${reportNumber || 'report'}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(downloadUrl);
+      toast.success('PDF downloaded successfully');
+    } catch (error) {
+      toast.error('Failed to download PDF');
+    }
   };
 
   const resetForm = () => {
