@@ -190,65 +190,41 @@ backend:
         comment: "Implemented /api/users CRUD, /api/users/{id}/password for password changes."
 
 frontend:
-  - task: "Production Schedule Page"
+  - task: "Notification Panel in Dashboard"
     implemented: true
     working: true
-    file: "/app/frontend/src/pages/ProductionSchedulePage.js"
+    file: "/app/frontend/src/components/NotificationPanel.js"
     stuck_count: 0
     priority: "high"
     needs_retesting: false
     status_history:
       - working: true
         agent: "main"
-        comment: "Page exists and renders correctly. Shows job scheduling with tabs for Ready/Partial/Not Ready jobs."
+        comment: "Created NotificationPanel component. Shows notifications, mark as read, auto-refreshes. Integrated into dashboard."
 
-  - task: "Blend Reports Page"
+  - task: "Users Page"
     implemented: true
     working: true
-    file: "/app/frontend/src/pages/BlendReportsPage.js"
+    file: "/app/frontend/src/pages/UsersPage.js"
     stuck_count: 0
     priority: "high"
     needs_retesting: false
     status_history:
       - working: true
         agent: "main"
-        comment: "Page exists and renders correctly. Has create dialog, list view, PDF download button."
+        comment: "Created UsersPage with create/edit/delete user, change password, role filter. Admin only access."
 
-  - task: "Sidebar Navigation Links"
+  - task: "PDF Download Fix"
     implemented: true
-    working: true
-    file: "/app/frontend/src/components/layout/MainLayout.js"
-    stuck_count: 0
-    priority: "high"
-    needs_retesting: false
-    status_history:
-      - working: true
-        agent: "main"
-        comment: "Added Production Schedule and Blend Reports links to sidebar. Verified via screenshot."
-
-  - task: "App Routes for New Pages"
-    implemented: true
-    working: true
-    file: "/app/frontend/src/App.js"
-    stuck_count: 0
-    priority: "high"
-    needs_retesting: false
-    status_history:
-      - working: true
-        agent: "main"
-        comment: "Added routes for /production-schedule and /blend-reports. Both pages load correctly."
-
-  - task: "Quotation PDF Download Button"
-    implemented: true
-    working: true
+    working: NA
     file: "/app/frontend/src/pages/QuotationsPage.js"
     stuck_count: 0
     priority: "high"
-    needs_retesting: false
+    needs_retesting: true
     status_history:
-      - working: true
+      - working: NA
         agent: "main"
-        comment: "Added download button to quotations list actions column. Visible in screenshot."
+        comment: "Changed from window.open to fetch+blob download to pass auth header properly."
 
 metadata:
   created_by: "main_agent"
