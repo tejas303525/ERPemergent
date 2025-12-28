@@ -1249,6 +1249,545 @@ async def get_recent_activities(current_user: dict = Depends(get_current_user)):
         "recent_jobs": recent_jobs
     }
 
+# ==================== EMAIL NOTIFICATION SERVICE ====================
+
+async def send_email_notification(to_emails: List[str], subject: str, html_content: str):
+    """Send email notification using Resend"""
+    if not RESEND_API_KEY:
+        logger.warning("RESEND_API_KEY not configured, skipping email")
+        return None
+    
+    try:
+        params = {
+            "from": SENDER_EMAIL,
+            "to": to_emails,
+            "subject": subject,
+            "html": html_content
+        }
+        result = await asyncio.to_thread(resend.Emails.send, params)
+        logger.info(f"Email sent to {to_emails}: {result}")
+        return result
+    except Exception as e:
+        logger.error(f"Failed to send email: {str(e)}")
+        return None
+
+async def notify_cro_received(booking: dict, transport_schedule: dict):
+    """Send notification when CRO is received"""
+    # Get users from transport and security departments
+    transport_users = await db.users.find({"role": {"$in": ["transport", "security", "admin"]}, "is_active": True}, {"_id": 0}).to_list(100)
+    emails = [u["email"] for u in transport_users if u.get("email")]
+    
+    if not emails:
+        return
+    
+    html_content = f"""
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <div style="background: #0ea5e9; color: white; padding: 20px; text-align: center;">
+            <h1 style="margin: 0;">📦 CRO Received - Action Required</h1>
+        </div>
+        <div style="padding: 20px; background: #f8f9fa;">
+            <h2 style="color: #333;">Container Pickup Required</h2>
+            <table style="width: 100%; border-collapse: collapse;">
+                <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Booking #:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">{booking.get('booking_number')}</td></tr>
+                <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>CRO #:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">{booking.get('cro_number')}</td></tr>
+                <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Shipping Line:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">{booking.get('shipping_line')}</td></tr>
+                <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Vessel:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">{booking.get('vessel_name')} ({booking.get('vessel_date')})</td></tr>
+                <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Container:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">{booking.get('container_count')}x {booking.get('container_type', '').upper()}</td></tr>
+                <tr style="background: #fff3cd;"><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>⚠️ Cutoff Date:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd; color: #856404;"><strong>{booking.get('cutoff_date')}</strong></td></tr>
+                <tr style="background: #d1ecf1;"><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>🚚 Pickup Date:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd; color: #0c5460;"><strong>{transport_schedule.get('pickup_date')}</strong></td></tr>
+                <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Route:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">{booking.get('port_of_loading')} → {booking.get('port_of_discharge')}</td></tr>
+            </table>
+            <div style="margin-top: 20px; padding: 15px; background: #e7f3ff; border-radius: 5px;">
+                <p style="margin: 0;"><strong>Transport Schedule:</strong> {transport_schedule.get('schedule_number')}</p>
+                <p style="margin: 5px 0 0 0;">Jobs: {', '.join(transport_schedule.get('job_numbers', []))}</p>
+            </div>
+            <p style="margin-top: 20px; color: #666;">Please assign a transporter and vehicle for this pickup.</p>
+        </div>
+        <div style="background: #333; color: #999; padding: 10px; text-align: center; font-size: 12px;">
+            Manufacturing ERP System
+        </div>
+    </div>
+    """
+    
+    await send_email_notification(
+        emails,
+        f"🚨 CRO Received - Pickup Required by {transport_schedule.get('pickup_date')} - {booking.get('booking_number')}",
+        html_content
+    )
+
+# ==================== PRODUCTION SCHEDULING ALGORITHM ====================
+
+class ProductionScheduleItem(BaseModel):
+    job_id: str
+    job_number: str
+    product_name: str
+    quantity: float
+    priority: str
+    spa_number: str
+    material_status: str  # ready, partial, not_ready
+    ready_percentage: float
+    missing_materials: List[Dict[str, Any]]
+    available_materials: List[Dict[str, Any]]
+    recommended_action: str
+    estimated_start: Optional[str] = None
+
+@api_router.get("/production/schedule")
+async def get_production_schedule(current_user: dict = Depends(get_current_user)):
+    """Get production schedule based on material availability"""
+    # Get all pending job orders
+    pending_jobs = await db.job_orders.find(
+        {"status": {"$in": ["pending", "procurement"]}},
+        {"_id": 0}
+    ).sort([("priority", -1), ("created_at", 1)]).to_list(1000)
+    
+    schedule = []
+    ready_jobs = []
+    partial_jobs = []
+    not_ready_jobs = []
+    
+    for job in pending_jobs:
+        bom = job.get("bom", [])
+        missing_materials = []
+        available_materials = []
+        total_items = len(bom)
+        ready_items = 0
+        
+        for item in bom:
+            product = await db.products.find_one({"id": item["product_id"]}, {"_id": 0})
+            current_stock = product["current_stock"] if product else 0
+            required = item["required_qty"]
+            
+            material_info = {
+                "product_id": item["product_id"],
+                "product_name": item["product_name"],
+                "sku": item["sku"],
+                "required_qty": required,
+                "available_qty": current_stock,
+                "shortage": max(0, required - current_stock),
+                "unit": item.get("unit", "KG")
+            }
+            
+            if current_stock >= required:
+                ready_items += 1
+                available_materials.append(material_info)
+            else:
+                missing_materials.append(material_info)
+        
+        ready_percentage = (ready_items / total_items * 100) if total_items > 0 else 100
+        
+        if ready_percentage == 100:
+            material_status = "ready"
+            recommended_action = "Start production immediately"
+        elif ready_percentage >= 50:
+            material_status = "partial"
+            recommended_action = "Procure missing materials or start partial production"
+        else:
+            material_status = "not_ready"
+            recommended_action = "Wait for procurement - insufficient materials"
+        
+        schedule_item = ProductionScheduleItem(
+            job_id=job["id"],
+            job_number=job["job_number"],
+            product_name=job["product_name"],
+            quantity=job["quantity"],
+            priority=job["priority"],
+            spa_number=job["spa_number"],
+            material_status=material_status,
+            ready_percentage=round(ready_percentage, 1),
+            missing_materials=missing_materials,
+            available_materials=available_materials,
+            recommended_action=recommended_action
+        )
+        
+        if material_status == "ready":
+            ready_jobs.append(schedule_item)
+        elif material_status == "partial":
+            partial_jobs.append(schedule_item)
+        else:
+            not_ready_jobs.append(schedule_item)
+    
+    # Sort by priority within each category
+    priority_order = {"urgent": 0, "high": 1, "normal": 2, "low": 3}
+    ready_jobs.sort(key=lambda x: priority_order.get(x.priority, 2))
+    partial_jobs.sort(key=lambda x: priority_order.get(x.priority, 2))
+    not_ready_jobs.sort(key=lambda x: priority_order.get(x.priority, 2))
+    
+    return {
+        "summary": {
+            "total_pending": len(pending_jobs),
+            "ready_to_produce": len(ready_jobs),
+            "partial_materials": len(partial_jobs),
+            "awaiting_procurement": len(not_ready_jobs)
+        },
+        "ready_jobs": [j.model_dump() for j in ready_jobs],
+        "partial_jobs": [j.model_dump() for j in partial_jobs],
+        "not_ready_jobs": [j.model_dump() for j in not_ready_jobs]
+    }
+
+@api_router.get("/production/procurement-list")
+async def get_procurement_list(current_user: dict = Depends(get_current_user)):
+    """Get list of materials needed for all pending jobs"""
+    pending_jobs = await db.job_orders.find(
+        {"status": {"$in": ["pending", "procurement"]}},
+        {"_id": 0}
+    ).to_list(1000)
+    
+    material_needs = {}
+    
+    for job in pending_jobs:
+        for item in job.get("bom", []):
+            product_id = item["product_id"]
+            if product_id not in material_needs:
+                product = await db.products.find_one({"id": product_id}, {"_id": 0})
+                current_stock = product["current_stock"] if product else 0
+                material_needs[product_id] = {
+                    "product_id": product_id,
+                    "product_name": item["product_name"],
+                    "sku": item["sku"],
+                    "unit": item.get("unit", "KG"),
+                    "current_stock": current_stock,
+                    "total_required": 0,
+                    "total_shortage": 0,
+                    "jobs": []
+                }
+            
+            material_needs[product_id]["total_required"] += item["required_qty"]
+            material_needs[product_id]["jobs"].append({
+                "job_number": job["job_number"],
+                "required_qty": item["required_qty"]
+            })
+    
+    # Calculate shortages
+    procurement_list = []
+    for material in material_needs.values():
+        shortage = max(0, material["total_required"] - material["current_stock"])
+        material["total_shortage"] = shortage
+        if shortage > 0:
+            procurement_list.append(material)
+    
+    procurement_list.sort(key=lambda x: x["total_shortage"], reverse=True)
+    
+    return {
+        "total_materials_needed": len(procurement_list),
+        "procurement_list": procurement_list
+    }
+
+# ==================== BLEND REPORT ====================
+
+class BlendReportCreate(BaseModel):
+    job_order_id: str
+    batch_number: str
+    blend_date: str
+    operator_name: str
+    materials_used: List[Dict[str, Any]]  # [{product_id, product_name, sku, batch_lot, quantity_used}]
+    process_parameters: Dict[str, Any] = {}  # {temperature, mixing_time, speed, etc}
+    quality_checks: Dict[str, Any] = {}  # {viscosity, ph, density, etc}
+    output_quantity: float
+    yield_percentage: float
+    notes: Optional[str] = None
+
+class BlendReport(BlendReportCreate):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    report_number: str = ""
+    job_number: str = ""
+    product_name: str = ""
+    status: str = "draft"  # draft, submitted, approved
+    created_by: str = ""
+    approved_by: Optional[str] = None
+    approved_at: Optional[str] = None
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+@api_router.post("/blend-reports", response_model=BlendReport)
+async def create_blend_report(data: BlendReportCreate, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] not in ["admin", "production", "qc"]:
+        raise HTTPException(status_code=403, detail="Only production/QC can create blend reports")
+    
+    job = await db.job_orders.find_one({"id": data.job_order_id}, {"_id": 0})
+    if not job:
+        raise HTTPException(status_code=404, detail="Job order not found")
+    
+    report_number = await generate_sequence("BLR", "blend_reports")
+    
+    report = BlendReport(
+        **data.model_dump(),
+        report_number=report_number,
+        job_number=job["job_number"],
+        product_name=job["product_name"],
+        created_by=current_user["id"]
+    )
+    await db.blend_reports.insert_one(report.model_dump())
+    
+    # Update job order with blend report reference
+    await db.job_orders.update_one(
+        {"id": data.job_order_id},
+        {"$set": {"blend_report": report_number}}
+    )
+    
+    return report
+
+@api_router.get("/blend-reports")
+async def get_blend_reports(job_order_id: Optional[str] = None, status: Optional[str] = None, current_user: dict = Depends(get_current_user)):
+    query = {}
+    if job_order_id:
+        query["job_order_id"] = job_order_id
+    if status:
+        query["status"] = status
+    
+    reports = await db.blend_reports.find(query, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    return reports
+
+@api_router.get("/blend-reports/{report_id}")
+async def get_blend_report(report_id: str, current_user: dict = Depends(get_current_user)):
+    report = await db.blend_reports.find_one({"id": report_id}, {"_id": 0})
+    if not report:
+        raise HTTPException(status_code=404, detail="Blend report not found")
+    return report
+
+@api_router.put("/blend-reports/{report_id}/approve")
+async def approve_blend_report(report_id: str, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] not in ["admin", "qc"]:
+        raise HTTPException(status_code=403, detail="Only QC can approve blend reports")
+    
+    result = await db.blend_reports.update_one(
+        {"id": report_id},
+        {"$set": {
+            "status": "approved",
+            "approved_by": current_user["id"],
+            "approved_at": datetime.now(timezone.utc).isoformat()
+        }}
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Blend report not found")
+    return {"message": "Blend report approved"}
+
+# ==================== PDF GENERATION ====================
+
+def generate_cro_pdf(booking: dict, job_orders: list) -> BytesIO:
+    """Generate CRO/Loading Instructions PDF"""
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4, topMargin=1*cm, bottomMargin=1*cm)
+    styles = getSampleStyleSheet()
+    elements = []
+    
+    # Title
+    title_style = ParagraphStyle('Title', parent=styles['Heading1'], fontSize=18, alignment=TA_CENTER, spaceAfter=20)
+    elements.append(Paragraph("CONTAINER RELEASE ORDER / LOADING INSTRUCTIONS", title_style))
+    elements.append(Spacer(1, 10))
+    
+    # Booking Details
+    booking_data = [
+        ["Booking Number:", booking.get("booking_number", ""), "CRO Number:", booking.get("cro_number", "")],
+        ["Shipping Line:", booking.get("shipping_line", ""), "Vessel:", booking.get("vessel_name", "")],
+        ["Container:", f"{booking.get('container_count', 1)}x {booking.get('container_type', '').upper()}", "Vessel Date:", booking.get("vessel_date", "")],
+        ["Port of Loading:", booking.get("port_of_loading", ""), "Port of Discharge:", booking.get("port_of_discharge", "")],
+        ["Cutoff Date:", booking.get("cutoff_date", ""), "Gate Cutoff:", booking.get("gate_cutoff", "")],
+        ["Pickup Date:", booking.get("pickup_date", ""), "VGM Cutoff:", booking.get("vgm_cutoff", "")],
+    ]
+    
+    booking_table = Table(booking_data, colWidths=[2.5*cm, 5*cm, 2.5*cm, 5*cm])
+    booking_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (0, -1), colors.lightgrey),
+        ('BACKGROUND', (2, 0), (2, -1), colors.lightgrey),
+        ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
+        ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+        ('FONTSIZE', (0, 0), (-1, -1), 9),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('PADDING', (0, 0), (-1, -1), 5),
+    ]))
+    elements.append(booking_table)
+    elements.append(Spacer(1, 20))
+    
+    # Cargo Details
+    elements.append(Paragraph("CARGO TO LOAD:", styles['Heading2']))
+    elements.append(Spacer(1, 10))
+    
+    cargo_header = ["Job Number", "Product", "Quantity", "Packaging"]
+    cargo_data = [cargo_header]
+    
+    for job in job_orders:
+        cargo_data.append([
+            job.get("job_number", ""),
+            job.get("product_name", ""),
+            str(job.get("quantity", "")),
+            job.get("packaging", "Bulk")
+        ])
+    
+    cargo_table = Table(cargo_data, colWidths=[3.5*cm, 7*cm, 2.5*cm, 2.5*cm])
+    cargo_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#0ea5e9')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+        ('FONTSIZE', (0, 0), (-1, -1), 9),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('PADDING', (0, 0), (-1, -1), 5),
+        ('ALIGN', (2, 0), (2, -1), 'CENTER'),
+    ]))
+    elements.append(cargo_table)
+    elements.append(Spacer(1, 20))
+    
+    # Instructions
+    elements.append(Paragraph("LOADING INSTRUCTIONS:", styles['Heading2']))
+    instructions = """
+    1. Ensure container is clean and dry before loading<br/>
+    2. Check container for any damage or holes<br/>
+    3. Verify seal numbers before and after loading<br/>
+    4. Take photos of empty container, during loading, and sealed container<br/>
+    5. Complete VGM declaration before gate cutoff<br/>
+    6. Ensure all cargo matches the job order quantities<br/>
+    """
+    elements.append(Paragraph(instructions, styles['Normal']))
+    elements.append(Spacer(1, 20))
+    
+    # Footer
+    elements.append(Paragraph(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}", styles['Normal']))
+    
+    doc.build(elements)
+    buffer.seek(0)
+    return buffer
+
+def generate_blend_report_pdf(report: dict) -> BytesIO:
+    """Generate Blend Report PDF"""
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4, topMargin=1*cm, bottomMargin=1*cm)
+    styles = getSampleStyleSheet()
+    elements = []
+    
+    # Title
+    title_style = ParagraphStyle('Title', parent=styles['Heading1'], fontSize=18, alignment=TA_CENTER, spaceAfter=20)
+    elements.append(Paragraph("BLEND / PRODUCTION REPORT", title_style))
+    elements.append(Spacer(1, 10))
+    
+    # Report Info
+    info_data = [
+        ["Report Number:", report.get("report_number", ""), "Job Number:", report.get("job_number", "")],
+        ["Product:", report.get("product_name", ""), "Batch Number:", report.get("batch_number", "")],
+        ["Blend Date:", report.get("blend_date", ""), "Operator:", report.get("operator_name", "")],
+        ["Output Quantity:", str(report.get("output_quantity", "")), "Yield:", f"{report.get('yield_percentage', '')}%"],
+    ]
+    
+    info_table = Table(info_data, colWidths=[3*cm, 5*cm, 3*cm, 4.5*cm])
+    info_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (0, -1), colors.lightgrey),
+        ('BACKGROUND', (2, 0), (2, -1), colors.lightgrey),
+        ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+        ('FONTSIZE', (0, 0), (-1, -1), 9),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+        ('PADDING', (0, 0), (-1, -1), 5),
+    ]))
+    elements.append(info_table)
+    elements.append(Spacer(1, 20))
+    
+    # Materials Used
+    elements.append(Paragraph("MATERIALS USED:", styles['Heading2']))
+    mat_header = ["Material", "SKU", "Batch/Lot", "Quantity Used"]
+    mat_data = [mat_header]
+    
+    for mat in report.get("materials_used", []):
+        mat_data.append([
+            mat.get("product_name", ""),
+            mat.get("sku", ""),
+            mat.get("batch_lot", ""),
+            str(mat.get("quantity_used", ""))
+        ])
+    
+    mat_table = Table(mat_data, colWidths=[5.5*cm, 3*cm, 3.5*cm, 3.5*cm])
+    mat_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#10b981')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+        ('FONTSIZE', (0, 0), (-1, -1), 9),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+        ('PADDING', (0, 0), (-1, -1), 5),
+    ]))
+    elements.append(mat_table)
+    elements.append(Spacer(1, 20))
+    
+    # Process Parameters
+    if report.get("process_parameters"):
+        elements.append(Paragraph("PROCESS PARAMETERS:", styles['Heading2']))
+        param_data = [[k, str(v)] for k, v in report.get("process_parameters", {}).items()]
+        if param_data:
+            param_table = Table(param_data, colWidths=[5*cm, 10.5*cm])
+            param_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (0, -1), colors.lightgrey),
+                ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+                ('FONTSIZE', (0, 0), (-1, -1), 9),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+                ('PADDING', (0, 0), (-1, -1), 5),
+            ]))
+            elements.append(param_table)
+            elements.append(Spacer(1, 20))
+    
+    # Quality Checks
+    if report.get("quality_checks"):
+        elements.append(Paragraph("QUALITY CHECKS:", styles['Heading2']))
+        qc_data = [[k, str(v)] for k, v in report.get("quality_checks", {}).items()]
+        if qc_data:
+            qc_table = Table(qc_data, colWidths=[5*cm, 10.5*cm])
+            qc_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (0, -1), colors.lightgrey),
+                ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+                ('FONTSIZE', (0, 0), (-1, -1), 9),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+                ('PADDING', (0, 0), (-1, -1), 5),
+            ]))
+            elements.append(qc_table)
+            elements.append(Spacer(1, 20))
+    
+    # Status and Approval
+    status_text = f"Status: {report.get('status', 'draft').upper()}"
+    if report.get("approved_at"):
+        status_text += f" | Approved: {report.get('approved_at')}"
+    elements.append(Paragraph(status_text, styles['Normal']))
+    elements.append(Spacer(1, 10))
+    elements.append(Paragraph(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}", styles['Normal']))
+    
+    doc.build(elements)
+    buffer.seek(0)
+    return buffer
+
+@api_router.get("/pdf/cro/{booking_id}")
+async def download_cro_pdf(booking_id: str, current_user: dict = Depends(get_current_user)):
+    """Download CRO / Loading Instructions PDF"""
+    booking = await db.shipping_bookings.find_one({"id": booking_id}, {"_id": 0})
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    
+    # Get job orders
+    job_orders = []
+    for job_id in booking.get("job_order_ids", []):
+        job = await db.job_orders.find_one({"id": job_id}, {"_id": 0})
+        if job:
+            job_orders.append(job)
+    
+    pdf_buffer = generate_cro_pdf(booking, job_orders)
+    
+    return StreamingResponse(
+        pdf_buffer,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename=CRO_{booking.get('booking_number', 'unknown')}.pdf"}
+    )
+
+@api_router.get("/pdf/blend-report/{report_id}")
+async def download_blend_report_pdf(report_id: str, current_user: dict = Depends(get_current_user)):
+    """Download Blend Report PDF"""
+    report = await db.blend_reports.find_one({"id": report_id}, {"_id": 0})
+    if not report:
+        raise HTTPException(status_code=404, detail="Blend report not found")
+    
+    pdf_buffer = generate_blend_report_pdf(report)
+    
+    return StreamingResponse(
+        pdf_buffer,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename=BlendReport_{report.get('report_number', 'unknown')}.pdf"}
+    )
+
 @api_router.get("/")
 async def root():
     return {"message": "Manufacturing ERP API", "version": "1.0.0"}
