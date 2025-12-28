@@ -163,6 +163,7 @@ export const blendReportAPI = {
 
 // PDF Downloads
 export const pdfAPI = {
+  getQuotationUrl: (quotationId) => `${API_BASE}/pdf/quotation/${quotationId}`,
   getCROUrl: (bookingId) => `${API_BASE}/pdf/cro/${bookingId}`,
   getBlendReportUrl: (reportId) => `${API_BASE}/pdf/blend-report/${reportId}`,
 };
