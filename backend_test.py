@@ -113,7 +113,7 @@ class ERPTester:
             
             # 3. Create finished product
             product_data = {
-                "sku": "FP001",
+                "sku": f"FP001-{timestamp}",
                 "name": "Premium Chemical Blend",
                 "description": "High-quality chemical blend for industrial use",
                 "unit": "KG",
