@@ -468,6 +468,15 @@ export default function QuotationsPage() {
                       >
                         <Eye className="w-4 h-4" />
                       </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleDownloadPDF(q.id, q.pfi_number)}
+                        title="Download PDF"
+                        data-testid={`download-quotation-${q.pfi_number}`}
+                      >
+                        <Download className="w-4 h-4" />
+                      </Button>
                       {canApprove && q.status === 'pending' && (
                         <>
                           <Button
