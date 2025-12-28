@@ -189,12 +189,19 @@ class Payment(PaymentCreate):
 
 # Job Order Model
 class BOMItem(BaseModel):
-    product_id: str
-    product_name: str
-    sku: str
-    required_qty: float
-    available_qty: float = 0
+    model_config = ConfigDict(extra="allow")  # Allow extra fields
+    # Support both old and new field names
+    product_id: Optional[str] = None
+    material_id: Optional[str] = None
+    product_name: Optional[str] = None
+    material_name: Optional[str] = None
+    sku: Optional[str] = None
+    required_qty: Optional[float] = None
+    required_quantity: Optional[float] = None
+    available_qty: Optional[float] = 0
+    available_quantity: Optional[float] = 0
     unit: str = "KG"
+    status: Optional[str] = None
 
 class JobOrderCreate(BaseModel):
     sales_order_id: str
