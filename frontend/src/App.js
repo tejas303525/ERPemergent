@@ -22,6 +22,7 @@ import CustomersPage from './pages/CustomersPage';
 import ProductsPage from './pages/ProductsPage';
 import ProductionSchedulePage from './pages/ProductionSchedulePage';
 import BlendReportsPage from './pages/BlendReportsPage';
+import UsersPage from './pages/UsersPage';
 
 // Layout
 import MainLayout from './components/layout/MainLayout';
@@ -67,6 +68,7 @@ const AppRoutes = () => {
                 <Route path="/products" element={<ProductsPage />} />
                 <Route path="/production-schedule" element={<ProductionSchedulePage />} />
                 <Route path="/blend-reports" element={<BlendReportsPage />} />
+                <Route path="/users" element={<UsersPage />} />
               </Routes>
             </MainLayout>
           </PrivateRoute>
