@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { quotationAPI, customerAPI, productAPI } from '../lib/api';
+import { quotationAPI, customerAPI, productAPI, pdfAPI } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Textarea } from '../components/ui/textarea';
 import { toast } from 'sonner';
 import { formatCurrency, formatDate, getStatusColor, cn } from '../lib/utils';
-import { Plus, FileText, Check, X, Eye, Trash2 } from 'lucide-react';
+import { Plus, FileText, Check, X, Eye, Trash2, Download } from 'lucide-react';
 
 const CURRENCIES = ['USD', 'AED', 'EUR'];
 const ORDER_TYPES = ['local', 'export'];
