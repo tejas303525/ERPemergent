@@ -390,15 +390,9 @@ class ProductionScheduler:
         """
         week_start = datetime.fromisoformat(week_start_str).date()
         
-        # Step 1: Pull open job order items (DRUM packaging only)
+        # Step 1: Pull open job orders (DRUM packaging only)
+        # Using existing job_orders structure with packaging_type field
         pipeline = [
-            {'$lookup': {
-                'from': 'job_orders',
-                'localField': 'job_order_id',
-                'foreignField': 'id',
-                'as': 'job_order'
-            }},
-            {'$unwind': '$job_order'},
             {'$lookup': {
                 'from': 'products',
                 'localField': 'product_id',
@@ -414,14 +408,13 @@ class ProductionScheduler:
             }},
             {'$unwind': '$packaging'},
             {'$match': {
-                'job_order.status': {'$in': ['OPEN', 'CONFIRMED']},
-                'status': 'OPEN',
-                'product.type': 'MANUFACTURED',
-                'packaging.category': 'DRUM'
+                'status': {'$in': ['pending', 'in_production']},
+                'packaging_type': 'DRUM',
+                'product.type': 'MANUFACTURED'
             }}
         ]
         
-        job_items = await self.db.job_order_items.aggregate(pipeline).to_list(None)
+        job_items = await self.db.job_orders.aggregate(pipeline).to_list(None)
         
         if not job_items:
             return {
