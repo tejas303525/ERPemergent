@@ -1792,6 +1792,250 @@ async def download_blend_report_pdf(report_id: str, current_user: dict = Depends
         headers={"Content-Disposition": f"attachment; filename=BlendReport_{report.get('report_number', 'unknown')}.pdf"}
     )
 
+# ==================== QUOTATION PDF GENERATION ====================
+
+def generate_quotation_pdf(quotation: dict) -> BytesIO:
+    """Generate Quotation/PFI PDF"""
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4, topMargin=1*cm, bottomMargin=1*cm)
+    styles = getSampleStyleSheet()
+    elements = []
+    
+    # Title
+    title_style = ParagraphStyle('Title', parent=styles['Heading1'], fontSize=18, alignment=TA_CENTER, spaceAfter=20)
+    elements.append(Paragraph("PROFORMA INVOICE / QUOTATION", title_style))
+    elements.append(Spacer(1, 10))
+    
+    # Header Info
+    header_data = [
+        ["PFI Number:", quotation.get("pfi_number", ""), "Date:", quotation.get("created_at", "")[:10]],
+        ["Customer:", quotation.get("customer_name", ""), "Currency:", quotation.get("currency", "USD")],
+        ["Order Type:", quotation.get("order_type", "").upper(), "Payment Terms:", quotation.get("payment_terms", "")],
+    ]
+    
+    if quotation.get("order_type") == "export":
+        header_data.append(["Incoterm:", quotation.get("incoterm", ""), "Port of Loading:", quotation.get("port_of_loading", "")])
+        header_data.append(["Delivery Place:", quotation.get("delivery_place", ""), "Validity:", f"{quotation.get('validity_days', 30)} days"])
+    
+    header_table = Table(header_data, colWidths=[3*cm, 5*cm, 3*cm, 5*cm])
+    header_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (0, -1), colors.lightgrey),
+        ('BACKGROUND', (2, 0), (2, -1), colors.lightgrey),
+        ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
+        ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+        ('FONTSIZE', (0, 0), (-1, -1), 9),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('PADDING', (0, 0), (-1, -1), 6),
+    ]))
+    elements.append(header_table)
+    elements.append(Spacer(1, 20))
+    
+    # Items Table
+    items_header = ["#", "Product", "SKU", "Qty", "Unit Price", "Packaging", "Total"]
+    items_data = [items_header]
+    
+    currency_symbol = {"USD": "$", "AED": "AED ", "EUR": "€"}.get(quotation.get("currency", "USD"), "$")
+    
+    for idx, item in enumerate(quotation.get("items", []), 1):
+        items_data.append([
+            str(idx),
+            item.get("product_name", ""),
+            item.get("sku", ""),
+            str(item.get("quantity", 0)),
+            f"{currency_symbol}{item.get('unit_price', 0):,.2f}",
+            item.get("packaging", ""),
+            f"{currency_symbol}{item.get('total', 0):,.2f}"
+        ])
+    
+    items_table = Table(items_data, colWidths=[0.8*cm, 5*cm, 2.5*cm, 1.5*cm, 2.5*cm, 2*cm, 2.5*cm])
+    items_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1e293b')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+        ('FONTSIZE', (0, 0), (-1, -1), 9),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('ALIGN', (3, 0), (6, -1), 'RIGHT'),
+        ('PADDING', (0, 0), (-1, -1), 6),
+    ]))
+    elements.append(items_table)
+    elements.append(Spacer(1, 15))
+    
+    # Totals
+    totals_data = [
+        ["", "", "", "", "", "Subtotal:", f"{currency_symbol}{quotation.get('subtotal', 0):,.2f}"],
+        ["", "", "", "", "", "Total:", f"{currency_symbol}{quotation.get('total', 0):,.2f}"],
+    ]
+    totals_table = Table(totals_data, colWidths=[0.8*cm, 5*cm, 2.5*cm, 1.5*cm, 2.5*cm, 2*cm, 2.5*cm])
+    totals_table.setStyle(TableStyle([
+        ('FONTNAME', (5, 0), (6, -1), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 10),
+        ('ALIGN', (5, 0), (6, -1), 'RIGHT'),
+        ('LINEABOVE', (5, 0), (6, 0), 1, colors.black),
+        ('LINEBELOW', (5, -1), (6, -1), 2, colors.black),
+    ]))
+    elements.append(totals_table)
+    elements.append(Spacer(1, 20))
+    
+    # Notes
+    if quotation.get("notes"):
+        elements.append(Paragraph("<b>Notes:</b>", styles['Normal']))
+        elements.append(Paragraph(quotation.get("notes", ""), styles['Normal']))
+    
+    # Status
+    elements.append(Spacer(1, 20))
+    status_style = ParagraphStyle('Status', parent=styles['Normal'], alignment=TA_CENTER, fontSize=12)
+    elements.append(Paragraph(f"Status: {quotation.get('status', '').upper()}", status_style))
+    
+    doc.build(elements)
+    buffer.seek(0)
+    return buffer
+
+@api_router.get("/pdf/quotation/{quotation_id}")
+async def download_quotation_pdf(quotation_id: str, current_user: dict = Depends(get_current_user)):
+    """Download Quotation/PFI PDF"""
+    quotation = await db.quotations.find_one({"id": quotation_id}, {"_id": 0})
+    if not quotation:
+        raise HTTPException(status_code=404, detail="Quotation not found")
+    
+    pdf_buffer = generate_quotation_pdf(quotation)
+    return StreamingResponse(
+        pdf_buffer,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename=PFI_{quotation.get('pfi_number', 'unknown')}.pdf"}
+    )
+
+# ==================== ADDITIONAL EMAIL NOTIFICATIONS ====================
+
+async def notify_quotation_approved(quotation: dict):
+    """Send notification when quotation is approved"""
+    # Get sales users
+    sales_users = await db.users.find({"role": {"$in": ["sales", "admin"]}, "is_active": True}, {"_id": 0}).to_list(100)
+    emails = [u["email"] for u in sales_users if u.get("email")]
+    
+    if not emails:
+        return
+    
+    currency_symbol = {"USD": "$", "AED": "AED ", "EUR": "€"}.get(quotation.get("currency", "USD"), "$")
+    
+    html_content = f"""
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <div style="background: #10b981; color: white; padding: 20px; text-align: center;">
+            <h1 style="margin: 0;">✅ Quotation Approved</h1>
+        </div>
+        <div style="padding: 20px; background: #f8f9fa;">
+            <h2 style="color: #333;">Quotation {quotation.get('pfi_number')} has been approved!</h2>
+            <table style="width: 100%; border-collapse: collapse;">
+                <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>PFI Number:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">{quotation.get('pfi_number')}</td></tr>
+                <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Customer:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">{quotation.get('customer_name')}</td></tr>
+                <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Total:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">{currency_symbol}{quotation.get('total', 0):,.2f}</td></tr>
+                <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Payment Terms:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">{quotation.get('payment_terms')}</td></tr>
+            </table>
+            <p style="margin-top: 20px;">You can now convert this quotation to a Sales Order.</p>
+        </div>
+        <div style="background: #333; color: #999; padding: 10px; text-align: center; font-size: 12px;">
+            Manufacturing ERP System
+        </div>
+    </div>
+    """
+    
+    await send_email_notification(
+        emails,
+        f"✅ Quotation Approved - {quotation.get('pfi_number')} - {quotation.get('customer_name')}",
+        html_content
+    )
+
+async def notify_job_order_status_change(job: dict, new_status: str):
+    """Send notification when job order status changes"""
+    # Get relevant users based on status
+    roles_to_notify = {
+        "in_production": ["production", "admin"],
+        "procurement": ["procurement", "admin"],
+        "ready_for_dispatch": ["shipping", "security", "admin"],
+        "dispatched": ["shipping", "security", "transport", "admin"]
+    }
+    
+    roles = roles_to_notify.get(new_status, ["admin"])
+    users = await db.users.find({"role": {"$in": roles}, "is_active": True}, {"_id": 0}).to_list(100)
+    emails = [u["email"] for u in users if u.get("email")]
+    
+    if not emails:
+        return
+    
+    status_colors = {
+        "in_production": "#f59e0b",
+        "procurement": "#ef4444",
+        "ready_for_dispatch": "#10b981",
+        "dispatched": "#3b82f6"
+    }
+    
+    html_content = f"""
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <div style="background: {status_colors.get(new_status, '#6b7280')}; color: white; padding: 20px; text-align: center;">
+            <h1 style="margin: 0;">📦 Job Order Update</h1>
+        </div>
+        <div style="padding: 20px; background: #f8f9fa;">
+            <h2 style="color: #333;">Job {job.get('job_number')} - Status Changed</h2>
+            <table style="width: 100%; border-collapse: collapse;">
+                <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Job Number:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">{job.get('job_number')}</td></tr>
+                <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>SPA Number:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">{job.get('spa_number')}</td></tr>
+                <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Product:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">{job.get('product_name')}</td></tr>
+                <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Quantity:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">{job.get('quantity')}</td></tr>
+                <tr style="background: #e7f3ff;"><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>New Status:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd; font-weight: bold;">{new_status.replace('_', ' ').upper()}</td></tr>
+            </table>
+        </div>
+        <div style="background: #333; color: #999; padding: 10px; text-align: center; font-size: 12px;">
+            Manufacturing ERP System
+        </div>
+    </div>
+    """
+    
+    await send_email_notification(
+        emails,
+        f"📦 Job Order {job.get('job_number')} - {new_status.replace('_', ' ').title()}",
+        html_content
+    )
+
+async def notify_dispatch_ready(job: dict, dispatch_schedule: dict):
+    """Send notification when a dispatch is scheduled"""
+    # Get security and transport users
+    users = await db.users.find({"role": {"$in": ["security", "transport", "admin"]}, "is_active": True}, {"_id": 0}).to_list(100)
+    emails = [u["email"] for u in users if u.get("email")]
+    
+    if not emails:
+        return
+    
+    html_content = f"""
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <div style="background: #8b5cf6; color: white; padding: 20px; text-align: center;">
+            <h1 style="margin: 0;">🚛 Dispatch Ready</h1>
+        </div>
+        <div style="padding: 20px; background: #f8f9fa;">
+            <h2 style="color: #333;">Container pickup scheduled!</h2>
+            <table style="width: 100%; border-collapse: collapse;">
+                <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Schedule #:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">{dispatch_schedule.get('schedule_number')}</td></tr>
+                <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Booking #:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">{dispatch_schedule.get('booking_number')}</td></tr>
+                <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Job Numbers:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">{', '.join(dispatch_schedule.get('job_numbers', []))}</td></tr>
+                <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Products:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">{', '.join(dispatch_schedule.get('product_names', []))}</td></tr>
+                <tr style="background: #d1ecf1;"><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Pickup Date:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd; font-weight: bold;">{dispatch_schedule.get('pickup_date')}</td></tr>
+                <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Container:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">{dispatch_schedule.get('container_count')}x {dispatch_schedule.get('container_type')}</td></tr>
+            </table>
+            <p style="margin-top: 20px; color: #666;">Please prepare for container loading at the scheduled time.</p>
+        </div>
+        <div style="background: #333; color: #999; padding: 10px; text-align: center; font-size: 12px;">
+            Manufacturing ERP System
+        </div>
+    </div>
+    """
+    
+    await send_email_notification(
+        emails,
+        f"🚛 Dispatch Ready - Pickup on {dispatch_schedule.get('pickup_date')}",
+        html_content
+    )
+
 @api_router.get("/")
 async def root():
     return {"message": "Manufacturing ERP API", "version": "1.0.0"}
