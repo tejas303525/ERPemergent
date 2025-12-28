@@ -168,4 +168,23 @@ export const pdfAPI = {
   getBlendReportUrl: (reportId) => `${API_BASE}/pdf/blend-report/${reportId}`,
 };
 
+// Notifications
+export const notificationAPI = {
+  getAll: (unreadOnly) => api.get('/notifications', { params: { unread_only: unreadOnly } }),
+  getRecent: () => api.get('/notifications/recent'),
+  markRead: (id) => api.put(`/notifications/${id}/read`),
+  markAllRead: () => api.put('/notifications/read-all'),
+  create: (data) => api.post('/notifications', data),
+};
+
+// User Management
+export const userAPI = {
+  getAll: () => api.get('/users'),
+  getOne: (id) => api.get(`/users/${id}`),
+  create: (data) => api.post('/auth/register', data),
+  update: (id, data) => api.put(`/users/${id}`, data),
+  changePassword: (id, newPassword) => api.put(`/users/${id}/password`, { new_password: newPassword }),
+  delete: (id) => api.delete(`/users/${id}`),
+};
+
 export default api;
