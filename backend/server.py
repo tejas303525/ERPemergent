@@ -247,16 +247,37 @@ class ShippingBookingCreate(BaseModel):
     container_count: int = 1
     port_of_loading: str
     port_of_discharge: str
-    cutoff_date: str
-    pullout_date: str
+    cargo_description: Optional[str] = None
+    cargo_weight: Optional[float] = None
+    is_dg: bool = False  # Dangerous Goods
+    dg_class: Optional[str] = None
     notes: Optional[str] = None
+
+class ShippingBookingUpdate(BaseModel):
+    cro_number: Optional[str] = None
+    vessel_name: Optional[str] = None
+    vessel_date: Optional[str] = None  # Vessel departure date
+    cutoff_date: Optional[str] = None  # Container cutoff at port
+    gate_cutoff: Optional[str] = None  # Gate cutoff time
+    vgm_cutoff: Optional[str] = None  # VGM submission cutoff
+    freight_rate: Optional[float] = None
+    freight_currency: str = "USD"
+    status: Optional[str] = None
 
 class ShippingBooking(ShippingBookingCreate):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     booking_number: str = ""
     cro_number: Optional[str] = None
-    status: str = "pending"  # pending, confirmed, loaded, shipped
+    vessel_name: Optional[str] = None
+    vessel_date: Optional[str] = None
+    cutoff_date: Optional[str] = None
+    gate_cutoff: Optional[str] = None
+    vgm_cutoff: Optional[str] = None
+    freight_rate: Optional[float] = None
+    freight_currency: str = "USD"
+    pickup_date: Optional[str] = None  # Auto-calculated: cutoff - 3 days
+    status: str = "pending"  # pending, cro_received, transport_scheduled, loaded, shipped
     created_by: str = ""
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
