@@ -498,6 +498,256 @@ class ERPTester:
             self.log(f"❌ PDF generation test error: {str(e)}", "ERROR")
             return False
     
+    def test_user_management_api(self) -> bool:
+        """Test User Management API endpoints"""
+        try:
+            self.log("👥 Testing User Management API...")
+            
+            # Test GET /api/users - List all users (admin only)
+            response = self.session.get(f"{BASE_URL}/users")
+            if response.status_code == 200:
+                users_list = response.json()
+                self.log(f"✅ Users list endpoint working - found {len(users_list)} users")
+                
+                # Verify structure
+                if users_list and isinstance(users_list, list):
+                    first_user = users_list[0]
+                    required_keys = ["id", "email", "name", "role", "is_active"]
+                    if all(key in first_user for key in required_keys):
+                        self.log("✅ User list has correct structure")
+                    else:
+                        self.log("❌ User list missing required keys", "ERROR")
+                        return False
+                else:
+                    self.log("❌ Users list response is not a valid list", "ERROR")
+                    return False
+            else:
+                self.log(f"❌ Users list failed: {response.status_code} - {response.text}", "ERROR")
+                return False
+            
+            # Test POST /api/auth/register - Create new user
+            test_user_data = {
+                "email": f"testuser_{int(time.time())}@example.com",
+                "name": "Test User",
+                "password": "testpassword123",
+                "role": "sales",
+                "department": "Sales Department"
+            }
+            
+            response = self.session.post(f"{BASE_URL}/auth/register", json=test_user_data)
+            if response.status_code == 200:
+                self.test_data["test_user"] = response.json()
+                self.log(f"✅ User creation successful: {self.test_data['test_user']['email']}")
+            else:
+                self.log(f"❌ User creation failed: {response.status_code} - {response.text}", "ERROR")
+                return False
+            
+            # Test PUT /api/users/{id} - Update user
+            update_data = {
+                "name": "Updated Test User",
+                "role": "finance",
+                "department": "Finance Department",
+                "is_active": True
+            }
+            
+            response = self.session.put(f"{BASE_URL}/users/{self.test_data['test_user']['id']}", json=update_data)
+            if response.status_code == 200:
+                updated_user = response.json()
+                if updated_user["name"] == "Updated Test User" and updated_user["role"] == "finance":
+                    self.log("✅ User update successful")
+                else:
+                    self.log("❌ User update data not reflected correctly", "ERROR")
+                    return False
+            else:
+                self.log(f"❌ User update failed: {response.status_code} - {response.text}", "ERROR")
+                return False
+            
+            # Test PUT /api/users/{id}/password - Change user password
+            password_data = {
+                "new_password": "newpassword456"
+            }
+            
+            response = self.session.put(f"{BASE_URL}/users/{self.test_data['test_user']['id']}/password", json=password_data)
+            if response.status_code == 200:
+                self.log("✅ Password change successful")
+            else:
+                self.log(f"❌ Password change failed: {response.status_code} - {response.text}", "ERROR")
+                return False
+            
+            # Test DELETE /api/users/{id} - Delete user (cannot delete self)
+            response = self.session.delete(f"{BASE_URL}/users/{self.test_data['test_user']['id']}")
+            if response.status_code == 200:
+                self.log("✅ User deletion successful")
+            else:
+                self.log(f"❌ User deletion failed: {response.status_code} - {response.text}", "ERROR")
+                return False
+            
+            # Test trying to delete self (should fail)
+            response = self.session.delete(f"{BASE_URL}/users/{self.user_data['id']}")
+            if response.status_code == 400 or response.status_code == 403:
+                self.log("✅ Self-deletion properly blocked")
+            else:
+                self.log(f"⚠️ Self-deletion not properly blocked: {response.status_code}", "WARNING")
+            
+            return True
+            
+        except Exception as e:
+            self.log(f"❌ User Management API test error: {str(e)}", "ERROR")
+            return False
+    
+    def test_notifications_api(self) -> bool:
+        """Test Notifications API endpoints"""
+        try:
+            self.log("🔔 Testing Notifications API...")
+            
+            # Test POST /api/notifications - Create notification (admin only)
+            notification_data = {
+                "title": "Test Notification",
+                "message": "This is a test notification for API testing",
+                "type": "info",
+                "link": "/test",
+                "user_id": None  # Global notification
+            }
+            
+            response = self.session.post(f"{BASE_URL}/notifications", json=notification_data)
+            if response.status_code == 200:
+                self.test_data["test_notification"] = response.json()
+                self.log(f"✅ Notification creation successful: {self.test_data['test_notification']['id']}")
+            else:
+                self.log(f"❌ Notification creation failed: {response.status_code} - {response.text}", "ERROR")
+                return False
+            
+            # Test GET /api/notifications/recent - Get recent notifications with unread count
+            response = self.session.get(f"{BASE_URL}/notifications/recent")
+            if response.status_code == 200:
+                recent_data = response.json()
+                
+                # Verify structure
+                required_keys = ["notifications", "unread_count"]
+                if all(key in recent_data for key in required_keys):
+                    self.log("✅ Recent notifications endpoint has correct structure")
+                    self.log(f"   📊 Unread count: {recent_data['unread_count']}")
+                    
+                    # Check if our test notification is there
+                    notifications = recent_data["notifications"]
+                    test_notif_found = any(n["id"] == self.test_data["test_notification"]["id"] for n in notifications)
+                    if test_notif_found:
+                        self.log("✅ Test notification found in recent notifications")
+                    else:
+                        self.log("⚠️ Test notification not found in recent notifications", "WARNING")
+                else:
+                    self.log("❌ Recent notifications response missing required keys", "ERROR")
+                    return False
+            else:
+                self.log(f"❌ Recent notifications failed: {response.status_code} - {response.text}", "ERROR")
+                return False
+            
+            # Test GET /api/notifications - List all notifications
+            response = self.session.get(f"{BASE_URL}/notifications")
+            if response.status_code == 200:
+                all_notifications = response.json()
+                self.log(f"✅ All notifications endpoint working - found {len(all_notifications)} notifications")
+                
+                # Verify structure
+                if all_notifications and isinstance(all_notifications, list):
+                    first_notif = all_notifications[0]
+                    required_keys = ["id", "title", "message", "type", "is_read", "created_at"]
+                    if all(key in first_notif for key in required_keys):
+                        self.log("✅ Notification list has correct structure")
+                    else:
+                        self.log("❌ Notification list missing required keys", "ERROR")
+                        return False
+            else:
+                self.log(f"❌ All notifications failed: {response.status_code} - {response.text}", "ERROR")
+                return False
+            
+            # Test PUT /api/notifications/{id}/read - Mark single notification as read
+            response = self.session.put(f"{BASE_URL}/notifications/{self.test_data['test_notification']['id']}/read")
+            if response.status_code == 200:
+                self.log("✅ Mark notification as read successful")
+            else:
+                self.log(f"❌ Mark notification as read failed: {response.status_code} - {response.text}", "ERROR")
+                return False
+            
+            # Test GET /api/notifications?unread_only=true - Get unread notifications only
+            response = self.session.get(f"{BASE_URL}/notifications?unread_only=true")
+            if response.status_code == 200:
+                unread_notifications = response.json()
+                self.log(f"✅ Unread notifications filter working - found {len(unread_notifications)} unread")
+                
+                # Our test notification should not be in unread list now
+                test_notif_in_unread = any(n["id"] == self.test_data["test_notification"]["id"] for n in unread_notifications)
+                if not test_notif_in_unread:
+                    self.log("✅ Marked notification correctly excluded from unread list")
+                else:
+                    self.log("⚠️ Marked notification still appears in unread list", "WARNING")
+            else:
+                self.log(f"❌ Unread notifications filter failed: {response.status_code} - {response.text}", "ERROR")
+                return False
+            
+            # Test PUT /api/notifications/read-all - Mark all notifications as read
+            response = self.session.put(f"{BASE_URL}/notifications/read-all")
+            if response.status_code == 200:
+                self.log("✅ Mark all notifications as read successful")
+                
+                # Verify by checking unread count
+                response = self.session.get(f"{BASE_URL}/notifications/recent")
+                if response.status_code == 200:
+                    recent_data = response.json()
+                    if recent_data["unread_count"] == 0:
+                        self.log("✅ All notifications marked as read - unread count is 0")
+                    else:
+                        self.log(f"⚠️ Unread count still {recent_data['unread_count']} after mark all as read", "WARNING")
+            else:
+                self.log(f"❌ Mark all as read failed: {response.status_code} - {response.text}", "ERROR")
+                return False
+            
+            return True
+            
+        except Exception as e:
+            self.log(f"❌ Notifications API test error: {str(e)}", "ERROR")
+            return False
+    
+    def test_pdf_download_auth(self) -> bool:
+        """Test PDF Download with Authorization header"""
+        try:
+            self.log("🔐 Testing PDF Download with Authorization...")
+            
+            # Test GET /api/pdf/quotation/{id} with Authorization header
+            headers = {"Authorization": f"Bearer {self.token}"}
+            response = self.session.get(f"{BASE_URL}/pdf/quotation/{self.test_data['quotation']['id']}", headers=headers)
+            
+            if response.status_code == 200:
+                content_type = response.headers.get('content-type', '')
+                if 'application/pdf' in content_type:
+                    self.log("✅ PDF download with auth header working - correct content type")
+                    
+                    if len(response.content) > 1000:
+                        self.log(f"✅ PDF download with auth has reasonable size: {len(response.content)} bytes")
+                    else:
+                        self.log("⚠️ PDF download seems too small", "WARNING")
+                else:
+                    self.log(f"❌ PDF download wrong content type: {content_type}", "ERROR")
+                    return False
+            else:
+                self.log(f"❌ PDF download with auth failed: {response.status_code} - {response.text}", "ERROR")
+                return False
+            
+            # Test without authorization (should fail)
+            session_without_auth = requests.Session()
+            response = session_without_auth.get(f"{BASE_URL}/pdf/quotation/{self.test_data['quotation']['id']}")
+            
+            if response.status_code == 401:
+                self.log("✅ PDF download properly requires authentication")
+            else:
+                self.log(f"⚠️ PDF download without auth returned: {response.status_code} (expected 401)", "WARNING")
+            
+            return True
+            
+        except Exception as e:
+            self.log(f"❌ PDF download auth test error: {str(e)}", "ERROR")
+            return False
+    
     def test_email_notifications(self) -> bool:
         """Test Email Notifications (already triggered during workflow)"""
         try:
