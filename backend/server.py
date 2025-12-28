@@ -1922,8 +1922,12 @@ def generate_quotation_pdf(quotation: dict) -> BytesIO:
     return buffer
 
 @api_router.get("/pdf/quotation/{quotation_id}")
-async def download_quotation_pdf(quotation_id: str, current_user: dict = Depends(get_current_user)):
+async def download_quotation_pdf(quotation_id: str, token: Optional[str] = None, current_user: dict = Depends(get_current_user)):
     """Download Quotation/PFI PDF"""
+    # If token provided via query param, use it (for browser downloads)
+    if token:
+        await get_user_from_token(token)
+    
     quotation = await db.quotations.find_one({"id": quotation_id}, {"_id": 0})
     if not quotation:
         raise HTTPException(status_code=404, detail="Quotation not found")
