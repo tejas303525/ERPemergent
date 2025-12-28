@@ -2622,12 +2622,10 @@ async def get_drum_schedule(week_start: str, current_user: dict = Depends(get_cu
                 {"_id": 0}
             ).to_list(1000)
             
-            # Enrich job links with job order item details
+    # Enrich job links with job order details
             for link in job_links:
-                job_item = await db.job_order_items.find_one({"id": link['job_order_item_id']}, {"_id": 0})
-                if job_item:
-                    job_order = await db.job_orders.find_one({"id": job_item['job_order_id']}, {"_id": 0})
-                    link['job_item'] = job_item
+                job_order = await db.job_orders.find_one({"id": link['job_order_item_id']}, {"_id": 0})
+                if job_order:
                     link['job_order'] = job_order
             
             campaign['job_links'] = job_links
