@@ -99,15 +99,26 @@ export const deliveryOrderAPI = {
 // Shipping
 export const shippingAPI = {
   getAll: (status) => api.get('/shipping-bookings', { params: { status } }),
+  getOne: (id) => api.get(`/shipping-bookings/${id}`),
   create: (data) => api.post('/shipping-bookings', data),
   update: (id, data) => api.put(`/shipping-bookings/${id}`, null, { params: data }),
+  updateCRO: (id, data) => api.put(`/shipping-bookings/${id}/cro`, data),
 };
 
 // Transport
 export const transportAPI = {
   getAll: (status) => api.get('/transport-schedules', { params: { status } }),
+  getPending: () => api.get('/transport-schedules/pending'),
   create: (data) => api.post('/transport-schedules', data),
   update: (id, data) => api.put(`/transport-schedules/${id}`, null, { params: data }),
+};
+
+// Dispatch (Security View)
+export const dispatchAPI = {
+  getAll: (status) => api.get('/dispatch-schedules', { params: { status } }),
+  getToday: () => api.get('/dispatch-schedules/today'),
+  getUpcoming: (days = 7) => api.get('/dispatch-schedules/upcoming', { params: { days } }),
+  updateStatus: (id, status) => api.put(`/dispatch-schedules/${id}/status`, null, { params: { status } }),
 };
 
 // Documents
