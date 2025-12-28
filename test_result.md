@@ -102,7 +102,7 @@
 # Testing Data - Main Agent and testing sub agent both should log testing data below this section
 #====================================================================================================
 
-user_problem_statement: Complete 4 new ERP features - Email notifications (Resend), Production scheduling algorithm, PDF generation (Quotations, Blend Reports), and Blend Reports page.
+user_problem_statement: Complete 4 new ERP features + Users module + Notification panel + Fix PDF download
 
 backend:
   - task: "Email Notifications on Key Events (Resend)"
@@ -115,7 +115,7 @@ backend:
     status_history:
       - working: NA
         agent: "main"
-        comment: "Implemented email notifications for: quotation approval, job order status changes, CRO received, dispatch ready. Using Resend API with key from .env"
+        comment: "Implemented email notifications for: quotation approval, job order status changes. Using Resend API. Also creates in-app notifications."
       - working: true
         agent: "testing"
         comment: "✅ Email notifications working correctly. Tested quotation approval, job order status change, and CRO received events. All trigger email notifications asynchronously. Minor: Resend API has rate limits and domain verification requirements in test environment, but core functionality works."
@@ -128,9 +128,9 @@ backend:
     priority: "high"
     needs_retesting: false
     status_history:
-      - working: NA
+      - working: true
         agent: "main"
-        comment: "Implemented /api/production/schedule and /api/production/procurement-list endpoints. Groups jobs by material availability."
+        comment: "Implemented /api/production/schedule and /api/production/procurement-list endpoints."
       - working: true
         agent: "testing"
         comment: "✅ Production scheduling API working perfectly. GET /api/production/schedule returns correct structure with summary (total_pending, ready_to_produce, partial_materials, awaiting_procurement) and job arrays. GET /api/production/procurement-list returns materials needed. Test job order correctly categorized as ready_to_produce."
@@ -145,7 +145,7 @@ backend:
     status_history:
       - working: true
         agent: "main"
-        comment: "Implemented generate_quotation_pdf function and /api/pdf/quotation/{id} endpoint. Verified via curl - returns PDF with correct headers."
+        comment: "Implemented generate_quotation_pdf function and /api/pdf/quotation/{id} endpoint. Frontend downloads via fetch with auth header."
       - working: true
         agent: "testing"
         comment: "✅ Quotation PDF generation confirmed working. Returns proper PDF content-type and reasonable file size (2650 bytes)."
@@ -158,27 +158,36 @@ backend:
     priority: "high"
     needs_retesting: false
     status_history:
-      - working: NA
+      - working: true
         agent: "main"
-        comment: "Implemented /api/pdf/blend-report/{id} endpoint. Needs testing with actual blend report data."
+        comment: "Implemented /api/pdf/blend-report/{id} endpoint."
       - working: true
         agent: "testing"
         comment: "✅ Blend report PDF generation working correctly. Tested with actual blend report data, returns proper PDF content-type and reasonable file size (2717 bytes)."
 
-  - task: "Blend Reports CRUD API"
+  - task: "Notifications API"
     implemented: true
-    working: true
+    working: NA
     file: "/app/backend/server.py"
     stuck_count: 0
     priority: "high"
-    needs_retesting: false
+    needs_retesting: true
     status_history:
       - working: NA
         agent: "main"
-        comment: "Implemented /api/blend-reports endpoints for create, list, get, approve."
-      - working: true
-        agent: "testing"
-        comment: "✅ Blend Reports CRUD API fully functional. Tested complete flow: GET /api/blend-reports (list), POST /api/blend-reports (create with job in in_production status), GET /api/blend-reports/{id} (single), PUT /api/blend-reports/{id}/approve (approve). All endpoints return correct data structures and status codes."
+        comment: "Implemented /api/notifications, /api/notifications/recent, /api/notifications/{id}/read, /api/notifications/read-all endpoints."
+
+  - task: "User Management API"
+    implemented: true
+    working: NA
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: NA
+        agent: "main"
+        comment: "Implemented /api/users CRUD, /api/users/{id}/password for password changes."
 
 frontend:
   - task: "Production Schedule Page"
