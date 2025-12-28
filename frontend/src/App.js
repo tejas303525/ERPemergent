@@ -15,6 +15,7 @@ import GRNPage from './pages/GRNPage';
 import DeliveryOrdersPage from './pages/DeliveryOrdersPage';
 import ShippingPage from './pages/ShippingPage';
 import TransportPage from './pages/TransportPage';
+import DispatchDashboard from './pages/DispatchDashboard';
 import DocumentationPage from './pages/DocumentationPage';
 import QCPage from './pages/QCPage';
 import CustomersPage from './pages/CustomersPage';
