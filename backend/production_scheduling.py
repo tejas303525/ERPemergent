@@ -534,7 +534,7 @@ class ProductionScheduler:
             for job_link in campaign_data.job_links:
                 link = ProductionCampaignJobLink(
                     campaign_id=campaign.id,
-                    job_order_item_id=job_link['job_order_item_id'],
+                    job_order_item_id=job_link['job_order_item_id'],  # This is now job_order id
                     drums_allocated=job_link['drums_allocated']
                 )
                 await self.db.production_campaign_job_links.insert_one(link.model_dump())
