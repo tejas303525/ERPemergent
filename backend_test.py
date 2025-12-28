@@ -845,6 +845,15 @@ class ERPTester:
         # Test Email Notifications
         results["email_notifications"] = self.test_email_notifications()
         
+        # Test User Management API
+        results["user_management_api"] = self.test_user_management_api()
+        
+        # Test Notifications API
+        results["notifications_api"] = self.test_notifications_api()
+        
+        # Test PDF Download Auth
+        results["pdf_download_auth"] = self.test_pdf_download_auth()
+        
         return results
 
 def main():
