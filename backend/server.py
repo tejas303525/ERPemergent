@@ -2074,6 +2074,167 @@ async def notify_dispatch_ready(job: dict, dispatch_schedule: dict):
         html_content
     )
 
+# ==================== NOTIFICATIONS ====================
+
+class NotificationCreate(BaseModel):
+    title: str
+    message: str
+    type: str = "info"  # info, warning, success, error
+    link: Optional[str] = None
+    user_id: Optional[str] = None  # If null, notification is for all users
+
+class Notification(NotificationCreate):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    is_read: bool = False
+    created_by: str = ""
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+@api_router.post("/notifications", response_model=Notification)
+async def create_notification(data: NotificationCreate, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] not in ["admin"]:
+        raise HTTPException(status_code=403, detail="Only admin can create notifications")
+    
+    notification = Notification(**data.model_dump(), created_by=current_user["id"])
+    await db.notifications.insert_one(notification.model_dump())
+    return notification
+
+@api_router.get("/notifications")
+async def get_notifications(unread_only: bool = False, current_user: dict = Depends(get_current_user)):
+    query = {
+        "$or": [
+            {"user_id": None},
+            {"user_id": current_user["id"]}
+        ]
+    }
+    if unread_only:
+        query["is_read"] = False
+    
+    notifications = await db.notifications.find(query, {"_id": 0}).sort("created_at", -1).to_list(100)
+    return notifications
+
+@api_router.put("/notifications/{notification_id}/read")
+async def mark_notification_read(notification_id: str, current_user: dict = Depends(get_current_user)):
+    result = await db.notifications.update_one(
+        {"id": notification_id},
+        {"$set": {"is_read": True}}
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Notification not found")
+    return {"message": "Notification marked as read"}
+
+@api_router.put("/notifications/read-all")
+async def mark_all_notifications_read(current_user: dict = Depends(get_current_user)):
+    await db.notifications.update_many(
+        {"$or": [{"user_id": None}, {"user_id": current_user["id"]}]},
+        {"$set": {"is_read": True}}
+    )
+    return {"message": "All notifications marked as read"}
+
+@api_router.get("/notifications/recent")
+async def get_recent_notifications(current_user: dict = Depends(get_current_user)):
+    """Get recent notifications with unread count for dashboard"""
+    query = {
+        "$or": [
+            {"user_id": None},
+            {"user_id": current_user["id"]}
+        ]
+    }
+    
+    notifications = await db.notifications.find(query, {"_id": 0}).sort("created_at", -1).to_list(10)
+    unread_count = await db.notifications.count_documents({**query, "is_read": False})
+    
+    return {
+        "notifications": notifications,
+        "unread_count": unread_count
+    }
+
+# ==================== USER MANAGEMENT ====================
+
+class UserUpdate(BaseModel):
+    name: Optional[str] = None
+    role: Optional[str] = None
+    department: Optional[str] = None
+    is_active: Optional[bool] = None
+
+class UserPasswordChange(BaseModel):
+    new_password: str
+
+@api_router.get("/users")
+async def get_users(current_user: dict = Depends(get_current_user)):
+    if current_user["role"] not in ["admin"]:
+        raise HTTPException(status_code=403, detail="Only admin can view users")
+    
+    users = await db.users.find({}, {"_id": 0, "password": 0}).sort("created_at", -1).to_list(1000)
+    return users
+
+@api_router.get("/users/{user_id}")
+async def get_user(user_id: str, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] not in ["admin"] and current_user["id"] != user_id:
+        raise HTTPException(status_code=403, detail="Only admin can view other users")
+    
+    user = await db.users.find_one({"id": user_id}, {"_id": 0, "password": 0})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return user
+
+@api_router.put("/users/{user_id}")
+async def update_user(user_id: str, data: UserUpdate, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] not in ["admin"]:
+        raise HTTPException(status_code=403, detail="Only admin can update users")
+    
+    update_data = {k: v for k, v in data.model_dump().items() if v is not None}
+    
+    if "role" in update_data and update_data["role"] not in ROLES:
+        raise HTTPException(status_code=400, detail=f"Invalid role. Must be one of: {ROLES}")
+    
+    result = await db.users.update_one({"id": user_id}, {"$set": update_data})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    user = await db.users.find_one({"id": user_id}, {"_id": 0, "password": 0})
+    return user
+
+@api_router.put("/users/{user_id}/password")
+async def change_user_password(user_id: str, data: UserPasswordChange, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] not in ["admin"]:
+        raise HTTPException(status_code=403, detail="Only admin can change passwords")
+    
+    hashed = hash_password(data.new_password)
+    result = await db.users.update_one({"id": user_id}, {"$set": {"password": hashed}})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="User not found")
+    return {"message": "Password updated successfully"}
+
+@api_router.delete("/users/{user_id}")
+async def delete_user(user_id: str, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] not in ["admin"]:
+        raise HTTPException(status_code=403, detail="Only admin can delete users")
+    
+    if user_id == current_user["id"]:
+        raise HTTPException(status_code=400, detail="Cannot delete yourself")
+    
+    result = await db.users.delete_one({"id": user_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="User not found")
+    return {"message": "User deleted successfully"}
+
+# Helper to create system notifications
+async def create_system_notification(title: str, message: str, type: str = "info", link: Optional[str] = None, user_id: Optional[str] = None):
+    notification = {
+        "id": str(uuid.uuid4()),
+        "title": title,
+        "message": message,
+        "type": type,
+        "link": link,
+        "user_id": user_id,
+        "is_read": False,
+        "created_by": "system",
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    await db.notifications.insert_one(notification)
+    return notification
+
 @api_router.get("/")
 async def root():
     return {"message": "Manufacturing ERP API", "version": "1.0.0"}
