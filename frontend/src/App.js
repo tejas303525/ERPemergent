@@ -23,6 +23,7 @@ import ProductsPage from './pages/ProductsPage';
 import ProductionSchedulePage from './pages/ProductionSchedulePage';
 import BlendReportsPage from './pages/BlendReportsPage';
 import UsersPage from './pages/UsersPage';
+import DrumSchedulePage from './pages/DrumSchedulePage';
 
 // Layout
 import MainLayout from './components/layout/MainLayout';
