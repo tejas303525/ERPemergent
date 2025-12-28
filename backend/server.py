@@ -284,8 +284,8 @@ class ShippingBooking(ShippingBookingCreate):
 # Transport Schedule Model
 class TransportScheduleCreate(BaseModel):
     shipping_booking_id: str
-    transporter: str
-    vehicle_type: str
+    transporter: Optional[str] = None
+    vehicle_type: str = "Container Chassis"
     pickup_date: str
     pickup_location: str = "Factory"
     notes: Optional[str] = None
@@ -295,11 +295,46 @@ class TransportSchedule(TransportScheduleCreate):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     schedule_number: str = ""
     booking_number: str = ""
-    status: str = "pending"  # pending, dispatched, delivered
+    cro_number: Optional[str] = None
+    vessel_name: Optional[str] = None
+    vessel_date: Optional[str] = None
+    cutoff_date: Optional[str] = None
+    container_type: str = ""
+    container_count: int = 1
+    port_of_loading: str = ""
+    job_numbers: List[str] = []
+    product_names: List[str] = []
+    status: str = "pending"  # pending, assigned, dispatched, at_factory, loaded, delivered_to_port
     vehicle_number: Optional[str] = None
     driver_name: Optional[str] = None
     driver_phone: Optional[str] = None
     created_by: str = ""
+    auto_generated: bool = False
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+# Dispatch Schedule Model (for Security to see incoming containers)
+class DispatchSchedule(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    transport_schedule_id: str
+    schedule_number: str
+    booking_number: str
+    job_numbers: List[str]
+    product_names: List[str]
+    container_type: str
+    container_count: int
+    pickup_date: str
+    expected_arrival: str  # At factory
+    vessel_date: str
+    cutoff_date: str
+    transporter: Optional[str] = None
+    vehicle_number: Optional[str] = None
+    driver_name: Optional[str] = None
+    driver_phone: Optional[str] = None
+    status: str = "scheduled"  # scheduled, in_transit, arrived, loading, loaded, departed
+    loading_start: Optional[str] = None
+    loading_end: Optional[str] = None
+    notes: Optional[str] = None
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 # Export Document Model
