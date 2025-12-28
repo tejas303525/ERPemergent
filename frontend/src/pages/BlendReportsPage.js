@@ -466,7 +466,7 @@ export default function BlendReportsPage() {
                       <Button
                         variant="ghost"
                         size="icon"
-                        onClick={() => handleDownloadPDF(report.id)}
+                        onClick={() => handleDownloadPDF(report.id, report.report_number)}
                         title="Download PDF"
                       >
                         <Download className="w-4 h-4" />
