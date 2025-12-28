@@ -768,10 +768,29 @@ async def update_job_status(job_id: str, status: str, current_user: dict = Depen
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Job order not found")
     
-    # Send email notification for status changes
+    # Send email notification and create in-app notification
     job = await db.job_orders.find_one({"id": job_id}, {"_id": 0})
     if job:
         asyncio.create_task(notify_job_order_status_change(job, status))
+        # Create in-app notification
+        notification_types = {
+            "in_production": ("info", "Production Started"),
+            "ready_for_dispatch": ("success", "Ready for Dispatch"),
+            "dispatched": ("success", "Job Dispatched"),
+            "procurement": ("warning", "Procurement Needed")
+        }
+        ntype, ntitle = notification_types.get(status, ("info", "Status Updated"))
+        await db.notifications.insert_one({
+            "id": str(uuid.uuid4()),
+            "title": ntitle,
+            "message": f"Job {job.get('job_number')} ({job.get('product_name')}) - {status.replace('_', ' ').title()}",
+            "type": ntype,
+            "link": "/job-orders",
+            "user_id": None,
+            "is_read": False,
+            "created_by": "system",
+            "created_at": datetime.now(timezone.utc).isoformat()
+        })
     
     return {"message": f"Job status updated to {status}"}
 
