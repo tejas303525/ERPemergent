@@ -1,53 +1,83 @@
-import { useEffect } from "react";
-import "@/App.css";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
-import axios from "axios";
+import React from 'react';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { Toaster } from './components/ui/sonner';
+import { AuthProvider, useAuth } from './context/AuthContext';
+import './App.css';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API = `${BACKEND_URL}/api`;
+// Pages
+import LoginPage from './pages/LoginPage';
+import DashboardPage from './pages/DashboardPage';
+import QuotationsPage from './pages/QuotationsPage';
+import SalesOrdersPage from './pages/SalesOrdersPage';
+import JobOrdersPage from './pages/JobOrdersPage';
+import InventoryPage from './pages/InventoryPage';
+import GRNPage from './pages/GRNPage';
+import DeliveryOrdersPage from './pages/DeliveryOrdersPage';
+import ShippingPage from './pages/ShippingPage';
+import TransportPage from './pages/TransportPage';
+import DocumentationPage from './pages/DocumentationPage';
+import QCPage from './pages/QCPage';
+import CustomersPage from './pages/CustomersPage';
+import ProductsPage from './pages/ProductsPage';
 
-const Home = () => {
-  const helloWorldApi = async () => {
-    try {
-      const response = await axios.get(`${API}/`);
-      console.log(response.data.message);
-    } catch (e) {
-      console.error(e, `errored out requesting / api`);
-    }
-  };
+// Layout
+import MainLayout from './components/layout/MainLayout';
 
-  useEffect(() => {
-    helloWorldApi();
-  }, []);
+const PrivateRoute = ({ children }) => {
+  const { isAuthenticated, loading } = useAuth();
+  
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-muted-foreground">Loading...</div>
+      </div>
+    );
+  }
+  
+  return isAuthenticated ? children : <Navigate to="/login" />;
+};
 
+const AppRoutes = () => {
   return (
-    <div>
-      <header className="App-header">
-        <a
-          className="App-link"
-          href="https://emergent.sh"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <img src="https://avatars.githubusercontent.com/in/1201222?s=120&u=2686cf91179bbafbc7a71bfbc43004cf9ae1acea&v=4" />
-        </a>
-        <p className="mt-5">Building something incredible ~!</p>
-      </header>
-    </div>
+    <Routes>
+      <Route path="/login" element={<LoginPage />} />
+      <Route
+        path="/*"
+        element={
+          <PrivateRoute>
+            <MainLayout>
+              <Routes>
+                <Route path="/" element={<DashboardPage />} />
+                <Route path="/dashboard" element={<DashboardPage />} />
+                <Route path="/quotations" element={<QuotationsPage />} />
+                <Route path="/sales-orders" element={<SalesOrdersPage />} />
+                <Route path="/job-orders" element={<JobOrdersPage />} />
+                <Route path="/inventory" element={<InventoryPage />} />
+                <Route path="/grn" element={<GRNPage />} />
+                <Route path="/delivery-orders" element={<DeliveryOrdersPage />} />
+                <Route path="/shipping" element={<ShippingPage />} />
+                <Route path="/transport" element={<TransportPage />} />
+                <Route path="/documentation" element={<DocumentationPage />} />
+                <Route path="/qc" element={<QCPage />} />
+                <Route path="/customers" element={<CustomersPage />} />
+                <Route path="/products" element={<ProductsPage />} />
+              </Routes>
+            </MainLayout>
+          </PrivateRoute>
+        }
+      />
+    </Routes>
   );
 };
 
 function App() {
   return (
-    <div className="App">
+    <AuthProvider>
       <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Home />}>
-            <Route index element={<Home />} />
-          </Route>
-        </Routes>
+        <AppRoutes />
+        <Toaster position="top-right" richColors />
       </BrowserRouter>
-    </div>
+    </AuthProvider>
   );
 }
 
