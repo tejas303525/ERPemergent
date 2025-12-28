@@ -20,6 +20,8 @@ import DocumentationPage from './pages/DocumentationPage';
 import QCPage from './pages/QCPage';
 import CustomersPage from './pages/CustomersPage';
 import ProductsPage from './pages/ProductsPage';
+import ProductionSchedulePage from './pages/ProductionSchedulePage';
+import BlendReportsPage from './pages/BlendReportsPage';
 
 // Layout
 import MainLayout from './components/layout/MainLayout';
@@ -63,6 +65,8 @@ const AppRoutes = () => {
                 <Route path="/qc" element={<QCPage />} />
                 <Route path="/customers" element={<CustomersPage />} />
                 <Route path="/products" element={<ProductsPage />} />
+                <Route path="/production-schedule" element={<ProductionSchedulePage />} />
+                <Route path="/blend-reports" element={<BlendReportsPage />} />
               </Routes>
             </MainLayout>
           </PrivateRoute>
