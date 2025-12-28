@@ -107,27 +107,33 @@ user_problem_statement: Complete 4 new ERP features - Email notifications (Resen
 backend:
   - task: "Email Notifications on Key Events (Resend)"
     implemented: true
-    working: NA
+    working: true
     file: "/app/backend/server.py"
     stuck_count: 0
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
       - working: NA
         agent: "main"
         comment: "Implemented email notifications for: quotation approval, job order status changes, CRO received, dispatch ready. Using Resend API with key from .env"
+      - working: true
+        agent: "testing"
+        comment: "✅ Email notifications working correctly. Tested quotation approval, job order status change, and CRO received events. All trigger email notifications asynchronously. Minor: Resend API has rate limits and domain verification requirements in test environment, but core functionality works."
 
   - task: "Production Scheduling Algorithm"
     implemented: true
-    working: NA
+    working: true
     file: "/app/backend/server.py"
     stuck_count: 0
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
       - working: NA
         agent: "main"
         comment: "Implemented /api/production/schedule and /api/production/procurement-list endpoints. Groups jobs by material availability."
+      - working: true
+        agent: "testing"
+        comment: "✅ Production scheduling API working perfectly. GET /api/production/schedule returns correct structure with summary (total_pending, ready_to_produce, partial_materials, awaiting_procurement) and job arrays. GET /api/production/procurement-list returns materials needed. Test job order correctly categorized as ready_to_produce."
 
   - task: "PDF Generation - Quotations"
     implemented: true
@@ -140,30 +146,39 @@ backend:
       - working: true
         agent: "main"
         comment: "Implemented generate_quotation_pdf function and /api/pdf/quotation/{id} endpoint. Verified via curl - returns PDF with correct headers."
+      - working: true
+        agent: "testing"
+        comment: "✅ Quotation PDF generation confirmed working. Returns proper PDF content-type and reasonable file size (2650 bytes)."
 
   - task: "PDF Generation - Blend Reports"
     implemented: true
-    working: NA
+    working: true
     file: "/app/backend/server.py"
     stuck_count: 0
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
       - working: NA
         agent: "main"
         comment: "Implemented /api/pdf/blend-report/{id} endpoint. Needs testing with actual blend report data."
+      - working: true
+        agent: "testing"
+        comment: "✅ Blend report PDF generation working correctly. Tested with actual blend report data, returns proper PDF content-type and reasonable file size (2717 bytes)."
 
   - task: "Blend Reports CRUD API"
     implemented: true
-    working: NA
+    working: true
     file: "/app/backend/server.py"
     stuck_count: 0
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
       - working: NA
         agent: "main"
         comment: "Implemented /api/blend-reports endpoints for create, list, get, approve."
+      - working: true
+        agent: "testing"
+        comment: "✅ Blend Reports CRUD API fully functional. Tested complete flow: GET /api/blend-reports (list), POST /api/blend-reports (create with job in in_production status), GET /api/blend-reports/{id} (single), PUT /api/blend-reports/{id}/approve (approve). All endpoints return correct data structures and status codes."
 
 frontend:
   - task: "Production Schedule Page"
