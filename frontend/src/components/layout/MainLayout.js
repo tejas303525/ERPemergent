@@ -19,7 +19,7 @@ import {
   Menu,
   Receipt,
   ClipboardList,
-  GateIcon,
+  DoorOpen,
 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { cn } from '../../lib/utils';
