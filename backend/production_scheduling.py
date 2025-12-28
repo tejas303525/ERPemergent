@@ -461,7 +461,12 @@ class ProductionScheduler:
                     bom['version']
                 )
             
-            campaigns_map[key].add_job_item(job_item)
+            # For existing job_orders, quantity field is in drums
+            campaigns_map[key].add_job_item({
+                'id': job_item['id'],
+                'qty_drums': int(job_item['quantity']),  # quantity is already in drums
+                'delivery_date': job_item.get('delivery_date', datetime.now(timezone.utc).isoformat())
+            })
         
         # Step 3: Sort campaigns by earliest due date
         campaigns_list = sorted(
