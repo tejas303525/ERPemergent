@@ -22,6 +22,7 @@ import {
   DoorOpen,
   Calendar,
   FlaskConical,
+  UserCog,
 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { cn } from '../../lib/utils';
@@ -43,6 +44,7 @@ const menuItems = [
   { icon: ClipboardCheck, label: 'Quality Control', path: '/qc', roles: ['admin', 'qc'] },
   { icon: Users, label: 'Customers', path: '/customers', roles: ['admin', 'sales'] },
   { icon: Package, label: 'Products', path: '/products', roles: ['admin', 'inventory', 'sales'] },
+  { icon: UserCog, label: 'User Management', path: '/users', roles: ['admin'] },
 ];
 
 export const MainLayout = ({ children }) => {
