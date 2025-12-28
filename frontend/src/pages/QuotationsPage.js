@@ -153,10 +153,35 @@ export default function QuotationsPage() {
     }
   };
 
-  const handleDownloadPDF = (quotationId, pfiNumber) => {
-    const token = localStorage.getItem('erp_token');
-    const url = pdfAPI.getQuotationUrl(quotationId);
-    window.open(`${url}?token=${token}`, '_blank');
+  const handleDownloadPDF = async (quotationId, pfiNumber) => {
+    try {
+      const token = localStorage.getItem('erp_token');
+      const url = pdfAPI.getQuotationUrl(quotationId);
+      
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to download PDF');
+      }
+      
+      const blob = await response.blob();
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = `PFI_${pfiNumber}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(downloadUrl);
+      toast.success('PDF downloaded successfully');
+    } catch (error) {
+      toast.error('Failed to download PDF');
+    }
   };
 
   const resetForm = () => {
