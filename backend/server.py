@@ -1425,14 +1425,32 @@ async def get_production_schedule(current_user: dict = Depends(get_current_user)
         ready_items = 0
         
         for item in bom:
-            product = await db.products.find_one({"id": item["product_id"]}, {"_id": 0})
-            current_stock = product["current_stock"] if product else 0
-            required = item["required_qty"]
+            # Support both old (product_id) and new (material_id) BOM structures
+            material_id = item.get("product_id") or item.get("material_id")
+            material_name = item.get("product_name") or item.get("material_name", "Unknown")
+            sku = item.get("sku", "N/A")
+            required = item.get("required_qty") or item.get("required_quantity", 0)
+            
+            if not material_id:
+                continue
+            
+            # Check if it's an inventory item (new structure) or product (old structure)
+            product = await db.products.find_one({"id": material_id}, {"_id": 0})
+            if product:
+                current_stock = product["current_stock"]
+            else:
+                # Check inventory_balances for new structure
+                inventory_item = await db.inventory_items.find_one({"id": material_id}, {"_id": 0})
+                if inventory_item:
+                    balance = await db.inventory_balances.find_one({"item_id": material_id}, {"_id": 0})
+                    current_stock = balance["on_hand"] if balance else 0
+                else:
+                    current_stock = 0
             
             material_info = {
-                "product_id": item["product_id"],
-                "product_name": item["product_name"],
-                "sku": item["sku"],
+                "product_id": material_id,
+                "product_name": material_name,
+                "sku": sku,
                 "required_qty": required,
                 "available_qty": current_stock,
                 "shortage": max(0, required - current_stock),
