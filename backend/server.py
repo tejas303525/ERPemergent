@@ -1526,14 +1526,33 @@ async def get_procurement_list(current_user: dict = Depends(get_current_user)):
     
     for job in pending_jobs:
         for item in job.get("bom", []):
-            product_id = item["product_id"]
-            if product_id not in material_needs:
-                product = await db.products.find_one({"id": product_id}, {"_id": 0})
-                current_stock = product["current_stock"] if product else 0
-                material_needs[product_id] = {
-                    "product_id": product_id,
-                    "product_name": item["product_name"],
-                    "sku": item["sku"],
+            # Support both old and new BOM structures
+            material_id = item.get("product_id") or item.get("material_id")
+            material_name = item.get("product_name") or item.get("material_name", "Unknown")
+            sku = item.get("sku", "N/A")
+            required = item.get("required_qty") or item.get("required_quantity", 0)
+            
+            if not material_id:
+                continue
+            
+            if material_id not in material_needs:
+                # Check products first (old structure)
+                product = await db.products.find_one({"id": material_id}, {"_id": 0})
+                if product:
+                    current_stock = product["current_stock"]
+                else:
+                    # Check inventory items (new structure)
+                    inventory_item = await db.inventory_items.find_one({"id": material_id}, {"_id": 0})
+                    if inventory_item:
+                        balance = await db.inventory_balances.find_one({"item_id": material_id}, {"_id": 0})
+                        current_stock = balance["on_hand"] if balance else 0
+                    else:
+                        current_stock = 0
+                
+                material_needs[material_id] = {
+                    "product_id": material_id,
+                    "product_name": material_name,
+                    "sku": sku,
                     "unit": item.get("unit", "KG"),
                     "current_stock": current_stock,
                     "total_required": 0,
@@ -1541,10 +1560,10 @@ async def get_procurement_list(current_user: dict = Depends(get_current_user)):
                     "jobs": []
                 }
             
-            material_needs[product_id]["total_required"] += item["required_qty"]
-            material_needs[product_id]["jobs"].append({
+            material_needs[material_id]["total_required"] += required
+            material_needs[material_id]["jobs"].append({
                 "job_number": job["job_number"],
-                "required_qty": item["required_qty"]
+                "required_qty": required
             })
     
     # Calculate shortages
