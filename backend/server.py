@@ -947,6 +947,10 @@ async def update_shipping_cro(booking_id: str, data: ShippingBookingUpdate, curr
             
             # Update booking status
             await db.shipping_bookings.update_one({"id": booking_id}, {"$set": {"status": "transport_scheduled"}})
+            
+            # Send email notification to Transport and Security
+            updated_booking = await db.shipping_bookings.find_one({"id": booking_id}, {"_id": 0})
+            await notify_cro_received(updated_booking, transport_schedule.model_dump())
     
     return {"message": "CRO details updated and transport schedule generated"}
 
