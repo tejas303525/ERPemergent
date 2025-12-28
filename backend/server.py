@@ -103,6 +103,8 @@ class ProductCreate(BaseModel):
     price_eur: float = 0
     category: str = "finished_product"  # raw_material, packaging, finished_product
     min_stock: float = 0
+    type: str = "MANUFACTURED"  # MANUFACTURED or TRADED (for production scheduling)
+    density_kg_per_l: Optional[float] = None  # For volume to weight conversion
 
 class Product(ProductCreate):
     model_config = ConfigDict(extra="ignore")
