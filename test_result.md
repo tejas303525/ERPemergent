@@ -101,3 +101,147 @@
 #====================================================================================================
 # Testing Data - Main Agent and testing sub agent both should log testing data below this section
 #====================================================================================================
+
+user_problem_statement: Complete 4 new ERP features - Email notifications (Resend), Production scheduling algorithm, PDF generation (Quotations, Blend Reports), and Blend Reports page.
+
+backend:
+  - task: "Email Notifications on Key Events (Resend)"
+    implemented: true
+    working: NA
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: NA
+        agent: "main"
+        comment: "Implemented email notifications for: quotation approval, job order status changes, CRO received, dispatch ready. Using Resend API with key from .env"
+
+  - task: "Production Scheduling Algorithm"
+    implemented: true
+    working: NA
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: NA
+        agent: "main"
+        comment: "Implemented /api/production/schedule and /api/production/procurement-list endpoints. Groups jobs by material availability."
+
+  - task: "PDF Generation - Quotations"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "Implemented generate_quotation_pdf function and /api/pdf/quotation/{id} endpoint. Verified via curl - returns PDF with correct headers."
+
+  - task: "PDF Generation - Blend Reports"
+    implemented: true
+    working: NA
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: NA
+        agent: "main"
+        comment: "Implemented /api/pdf/blend-report/{id} endpoint. Needs testing with actual blend report data."
+
+  - task: "Blend Reports CRUD API"
+    implemented: true
+    working: NA
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: NA
+        agent: "main"
+        comment: "Implemented /api/blend-reports endpoints for create, list, get, approve."
+
+frontend:
+  - task: "Production Schedule Page"
+    implemented: true
+    working: true
+    file: "/app/frontend/src/pages/ProductionSchedulePage.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "Page exists and renders correctly. Shows job scheduling with tabs for Ready/Partial/Not Ready jobs."
+
+  - task: "Blend Reports Page"
+    implemented: true
+    working: true
+    file: "/app/frontend/src/pages/BlendReportsPage.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "Page exists and renders correctly. Has create dialog, list view, PDF download button."
+
+  - task: "Sidebar Navigation Links"
+    implemented: true
+    working: true
+    file: "/app/frontend/src/components/layout/MainLayout.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "Added Production Schedule and Blend Reports links to sidebar. Verified via screenshot."
+
+  - task: "App Routes for New Pages"
+    implemented: true
+    working: true
+    file: "/app/frontend/src/App.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "Added routes for /production-schedule and /blend-reports. Both pages load correctly."
+
+  - task: "Quotation PDF Download Button"
+    implemented: true
+    working: true
+    file: "/app/frontend/src/pages/QuotationsPage.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "Added download button to quotations list actions column. Visible in screenshot."
+
+metadata:
+  created_by: "main_agent"
+  version: "1.0"
+  test_sequence: 1
+  run_ui: true
+
+test_plan:
+  current_focus:
+    - "Email Notifications on Key Events (Resend)"
+    - "Production Scheduling Algorithm"
+    - "PDF Generation - Blend Reports"
+    - "Blend Reports CRUD API"
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+
+agent_communication:
+  - agent: "main"
+    message: "Completed implementation of 4 new features. Frontend navigation and routes added. PDF generation for quotations verified via curl. Need testing agent to validate: 1) Email notifications trigger on key events, 2) Production schedule API returns correct data structure, 3) Blend reports full CRUD flow, 4) PDF downloads work end-to-end in browser."
