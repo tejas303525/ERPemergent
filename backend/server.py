@@ -229,7 +229,7 @@ class JobOrder(JobOrderCreate):
 class GRNItem(BaseModel):
     product_id: str
     product_name: str
-    sku: str
+    sku: Optional[str] = None  # Make optional
     quantity: float
     unit: str = "KG"
 
