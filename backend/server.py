@@ -2270,6 +2270,539 @@ async def create_system_notification(title: str, message: str, type: str = "info
 async def root():
     return {"message": "Manufacturing ERP API", "version": "1.0.0"}
 
+# ==================== PRODUCTION SCHEDULING APIs (DRUMS-ONLY) ====================
+
+from production_scheduling import (
+    ProductionScheduler,
+    Packaging, PackagingCreate,
+    InventoryItem, InventoryItemCreate, InventoryBalance, InventoryReservation,
+    JobOrderItem, JobOrderItemCreate,
+    ProductBOM, ProductBOMCreate, ProductBOMItem, ProductBOMItemCreate,
+    ProductPackagingSpec, ProductPackagingSpecCreate,
+    PackagingBOM, PackagingBOMCreate, PackagingBOMItem, PackagingBOMItemCreate,
+    Supplier, SupplierCreate,
+    ProcurementRequisition, ProcurementRequisitionLine,
+    PurchaseOrder, PurchaseOrderCreate, PurchaseOrderLine, PurchaseOrderLineCreate,
+    EmailOutbox,
+    ProductionCampaign, ProductionScheduleDay
+)
+
+# Initialize scheduler
+scheduler = ProductionScheduler(db)
+
+# Packaging Management
+@api_router.post("/packaging", response_model=Packaging)
+async def create_packaging(data: PackagingCreate, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] not in ["admin", "inventory"]:
+        raise HTTPException(status_code=403, detail="Only admin/inventory can create packaging")
+    
+    packaging = Packaging(**data.model_dump())
+    await db.packaging.insert_one(packaging.model_dump())
+    return packaging
+
+@api_router.get("/packaging", response_model=List[Packaging])
+async def get_packaging(category: Optional[str] = None, current_user: dict = Depends(get_current_user)):
+    query = {'is_active': True}
+    if category:
+        query['category'] = category
+    packaging_list = await db.packaging.find(query, {"_id": 0}).to_list(1000)
+    return packaging_list
+
+@api_router.put("/packaging/{packaging_id}", response_model=Packaging)
+async def update_packaging(packaging_id: str, data: PackagingCreate, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] not in ["admin", "inventory"]:
+        raise HTTPException(status_code=403, detail="Only admin/inventory can update packaging")
+    
+    result = await db.packaging.update_one({"id": packaging_id}, {"$set": data.model_dump()})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Packaging not found")
+    return await db.packaging.find_one({"id": packaging_id}, {"_id": 0})
+
+# Inventory Items Management
+@api_router.post("/inventory-items", response_model=InventoryItem)
+async def create_inventory_item(data: InventoryItemCreate, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] not in ["admin", "inventory"]:
+        raise HTTPException(status_code=403, detail="Only admin/inventory can create inventory items")
+    
+    item = InventoryItem(**data.model_dump())
+    await db.inventory_items.insert_one(item.model_dump())
+    
+    # Create initial balance record
+    balance = InventoryBalance(item_id=item.id)
+    await db.inventory_balances.insert_one(balance.model_dump())
+    
+    return item
+
+@api_router.get("/inventory-items")
+async def get_inventory_items(item_type: Optional[str] = None, current_user: dict = Depends(get_current_user)):
+    query = {'is_active': True}
+    if item_type:
+        query['item_type'] = item_type
+    items = await db.inventory_items.find(query, {"_id": 0}).to_list(1000)
+    return items
+
+# Job Order Items Management
+@api_router.post("/job-order-items", response_model=JobOrderItem)
+async def create_job_order_item(data: JobOrderItemCreate, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] not in ["admin", "production", "sales"]:
+        raise HTTPException(status_code=403, detail="Only admin/production/sales can create job order items")
+    
+    item = JobOrderItem(**data.model_dump())
+    await db.job_order_items.insert_one(item.model_dump())
+    return item
+
+@api_router.get("/job-order-items")
+async def get_job_order_items(status: Optional[str] = None, current_user: dict = Depends(get_current_user)):
+    query = {}
+    if status:
+        query['status'] = status
+    items = await db.job_order_items.find(query, {"_id": 0}).to_list(1000)
+    return items
+
+# Product BOM Management
+@api_router.post("/product-boms", response_model=ProductBOM)
+async def create_product_bom(data: ProductBOMCreate, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] not in ["admin", "production"]:
+        raise HTTPException(status_code=403, detail="Only admin/production can create BOMs")
+    
+    # If this is set as active, deactivate other BOMs for same product
+    if data.is_active:
+        await db.product_boms.update_many(
+            {"product_id": data.product_id, "is_active": True},
+            {"$set": {"is_active": False}}
+        )
+    
+    bom = ProductBOM(**data.model_dump())
+    await db.product_boms.insert_one(bom.model_dump())
+    return bom
+
+@api_router.post("/product-bom-items", response_model=ProductBOMItem)
+async def create_product_bom_item(data: ProductBOMItemCreate, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] not in ["admin", "production"]:
+        raise HTTPException(status_code=403, detail="Only admin/production can create BOM items")
+    
+    item = ProductBOMItem(**data.model_dump())
+    await db.product_bom_items.insert_one(item.model_dump())
+    return item
+
+@api_router.get("/product-boms/{product_id}")
+async def get_product_boms(product_id: str, current_user: dict = Depends(get_current_user)):
+    boms = await db.product_boms.find({"product_id": product_id}, {"_id": 0}).to_list(1000)
+    
+    # For each BOM, get its items
+    for bom in boms:
+        bom_items = await db.product_bom_items.find({"bom_id": bom['id']}, {"_id": 0}).to_list(1000)
+        
+        # Enrich with material details
+        for item in bom_items:
+            material = await db.inventory_items.find_one({"id": item['material_item_id']}, {"_id": 0})
+            item['material'] = material
+        
+        bom['items'] = bom_items
+    
+    return boms
+
+# Product-Packaging Conversion Specs
+@api_router.post("/product-packaging-specs", response_model=ProductPackagingSpec)
+async def create_product_packaging_spec(data: ProductPackagingSpecCreate, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] not in ["admin", "production"]:
+        raise HTTPException(status_code=403, detail="Only admin/production can create conversion specs")
+    
+    spec = ProductPackagingSpec(**data.model_dump())
+    await db.product_packaging_specs.insert_one(spec.model_dump())
+    return spec
+
+@api_router.get("/product-packaging-specs/{product_id}")
+async def get_product_packaging_specs(product_id: str, current_user: dict = Depends(get_current_user)):
+    specs = await db.product_packaging_specs.find({"product_id": product_id}, {"_id": 0}).to_list(1000)
+    return specs
+
+# Packaging BOM Management
+@api_router.post("/packaging-boms", response_model=PackagingBOM)
+async def create_packaging_bom(data: PackagingBOMCreate, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] not in ["admin", "inventory"]:
+        raise HTTPException(status_code=403, detail="Only admin/inventory can create packaging BOMs")
+    
+    bom = PackagingBOM(**data.model_dump())
+    await db.packaging_boms.insert_one(bom.model_dump())
+    return bom
+
+@api_router.post("/packaging-bom-items", response_model=PackagingBOMItem)
+async def create_packaging_bom_item(data: PackagingBOMItemCreate, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] not in ["admin", "inventory"]:
+        raise HTTPException(status_code=403, detail="Only admin/inventory can create packaging BOM items")
+    
+    item = PackagingBOMItem(**data.model_dump())
+    await db.packaging_bom_items.insert_one(item.model_dump())
+    return item
+
+@api_router.get("/packaging-boms/{packaging_id}")
+async def get_packaging_boms(packaging_id: str, current_user: dict = Depends(get_current_user)):
+    boms = await db.packaging_boms.find({"packaging_id": packaging_id}, {"_id": 0}).to_list(1000)
+    
+    for bom in boms:
+        bom_items = await db.packaging_bom_items.find({"packaging_bom_id": bom['id']}, {"_id": 0}).to_list(1000)
+        
+        # Enrich with pack item details
+        for item in bom_items:
+            pack_item = await db.inventory_items.find_one({"id": item['pack_item_id']}, {"_id": 0})
+            item['pack_item'] = pack_item
+        
+        bom['items'] = bom_items
+    
+    return boms
+
+# Suppliers Management
+@api_router.post("/suppliers", response_model=Supplier)
+async def create_supplier(data: SupplierCreate, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] not in ["admin", "procurement"]:
+        raise HTTPException(status_code=403, detail="Only admin/procurement can create suppliers")
+    
+    supplier = Supplier(**data.model_dump())
+    await db.suppliers.insert_one(supplier.model_dump())
+    return supplier
+
+@api_router.get("/suppliers")
+async def get_suppliers(current_user: dict = Depends(get_current_user)):
+    suppliers = await db.suppliers.find({"is_active": True}, {"_id": 0}).to_list(1000)
+    return suppliers
+
+# Purchase Orders Management
+@api_router.post("/purchase-orders", response_model=PurchaseOrder)
+async def create_purchase_order(data: PurchaseOrderCreate, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] not in ["admin", "procurement"]:
+        raise HTTPException(status_code=403, detail="Only admin/procurement can create POs")
+    
+    po_number = await generate_sequence("PO", "purchase_orders")
+    po = PurchaseOrder(**data.model_dump(), po_number=po_number)
+    await db.purchase_orders.insert_one(po.model_dump())
+    return po
+
+@api_router.post("/purchase-order-lines", response_model=PurchaseOrderLine)
+async def create_purchase_order_line(data: PurchaseOrderLineCreate, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] not in ["admin", "procurement"]:
+        raise HTTPException(status_code=403, detail="Only admin/procurement can create PO lines")
+    
+    line = PurchaseOrderLine(**data.model_dump())
+    await db.purchase_order_lines.insert_one(line.model_dump())
+    return line
+
+@api_router.get("/purchase-orders")
+async def get_purchase_orders(status: Optional[str] = None, current_user: dict = Depends(get_current_user)):
+    query = {}
+    if status:
+        query['status'] = status
+    pos = await db.purchase_orders.find(query, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    return pos
+
+@api_router.get("/purchase-orders/{po_id}")
+async def get_purchase_order(po_id: str, current_user: dict = Depends(get_current_user)):
+    po = await db.purchase_orders.find_one({"id": po_id}, {"_id": 0})
+    if not po:
+        raise HTTPException(status_code=404, detail="PO not found")
+    
+    # Get PO lines with item details
+    lines = await db.purchase_order_lines.find({"po_id": po_id}, {"_id": 0}).to_list(1000)
+    
+    for line in lines:
+        item = await db.inventory_items.find_one({"id": line['item_id']}, {"_id": 0})
+        line['item'] = item
+    
+    po['lines'] = lines
+    
+    # Get supplier details
+    supplier = await db.suppliers.find_one({"id": po['supplier_id']}, {"_id": 0})
+    po['supplier'] = supplier
+    
+    return po
+
+@api_router.put("/purchase-orders/{po_id}/status")
+async def update_po_status(po_id: str, status: str, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] not in ["admin", "procurement"]:
+        raise HTTPException(status_code=403, detail="Only admin/procurement can update PO status")
+    
+    valid_statuses = ["DRAFT", "APPROVED", "SENT", "PARTIAL", "RECEIVED"]
+    if status not in valid_statuses:
+        raise HTTPException(status_code=400, detail=f"Invalid status. Must be one of: {valid_statuses}")
+    
+    update_data = {"status": status}
+    
+    # If status is SENT, create email outbox entry (don't auto-send)
+    if status == "SENT":
+        update_data["sent_at"] = datetime.now(timezone.utc).isoformat()
+        
+        # Get PO and supplier details
+        po = await db.purchase_orders.find_one({"id": po_id}, {"_id": 0})
+        supplier = await db.suppliers.find_one({"id": po['supplier_id']}, {"_id": 0})
+        
+        if supplier and supplier.get('email'):
+            # Create email outbox entry
+            email = EmailOutbox(
+                to=supplier['email'],
+                subject=f"Purchase Order {po['po_number']}",
+                body=f"Please find attached Purchase Order {po['po_number']}",
+                ref_type="PO",
+                ref_id=po_id
+            )
+            await db.email_outbox.insert_one(email.model_dump())
+            update_data["email_status"] = "QUEUED"
+        else:
+            update_data["email_status"] = "NOT_CONFIGURED"
+    
+    result = await db.purchase_orders.update_one({"id": po_id}, {"$set": update_data})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="PO not found")
+    
+    return {"message": f"PO status updated to {status}"}
+
+# Procurement Requisitions
+@api_router.get("/procurement-requisitions")
+async def get_procurement_requisitions(status: Optional[str] = None, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] not in ["admin", "procurement", "production"]:
+        raise HTTPException(status_code=403, detail="Only admin/procurement/production can view PRs")
+    
+    query = {}
+    if status:
+        query['status'] = status
+    
+    prs = await db.procurement_requisitions.find(query, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    
+    # Get lines for each PR
+    for pr in prs:
+        lines = await db.procurement_requisition_lines.find({"pr_id": pr['id']}, {"_id": 0}).to_list(1000)
+        
+        # Enrich with item details
+        for line in lines:
+            item = await db.inventory_items.find_one({"id": line['item_id']}, {"_id": 0})
+            line['item'] = item
+        
+        pr['lines'] = lines
+    
+    return prs
+
+# Production Scheduling - Main APIs
+@api_router.post("/production/drum-schedule/regenerate")
+async def regenerate_drum_schedule(week_start: str, current_user: dict = Depends(get_current_user)):
+    """Regenerate weekly drum production schedule"""
+    if current_user["role"] not in ["admin", "production"]:
+        raise HTTPException(status_code=403, detail="Only admin/production can regenerate schedule")
+    
+    try:
+        result = await scheduler.regenerate_schedule(week_start)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/production/drum-schedule")
+async def get_drum_schedule(week_start: str, current_user: dict = Depends(get_current_user)):
+    """Get weekly drum production schedule"""
+    # Get schedule days for the week
+    schedule_days = await db.production_schedule_days.find(
+        {"week_start": week_start},
+        {"_id": 0}
+    ).sort("schedule_date", 1).to_list(1000)
+    
+    # Enrich with campaign and requirement details
+    for day in schedule_days:
+        # Get campaign
+        campaign = await db.production_campaigns.find_one({"id": day['campaign_id']}, {"_id": 0})
+        if campaign:
+            # Get product and packaging details
+            product = await db.products.find_one({"id": campaign['product_id']}, {"_id": 0})
+            packaging = await db.packaging.find_one({"id": campaign['packaging_id']}, {"_id": 0})
+            
+            campaign['product'] = product
+            campaign['packaging'] = packaging
+            
+            # Get job links
+            job_links = await db.production_campaign_job_links.find(
+                {"campaign_id": campaign['id']},
+                {"_id": 0}
+            ).to_list(1000)
+            
+            # Enrich job links with job order item details
+            for link in job_links:
+                job_item = await db.job_order_items.find_one({"id": link['job_order_item_id']}, {"_id": 0})
+                if job_item:
+                    job_order = await db.job_orders.find_one({"id": job_item['job_order_id']}, {"_id": 0})
+                    link['job_item'] = job_item
+                    link['job_order'] = job_order
+            
+            campaign['job_links'] = job_links
+            day['campaign'] = campaign
+        
+        # Get requirements
+        requirements = await db.production_day_requirements.find(
+            {"schedule_day_id": day['id']},
+            {"_id": 0}
+        ).to_list(1000)
+        
+        # Enrich requirements with item details
+        for req in requirements:
+            item = await db.inventory_items.find_one({"id": req['item_id']}, {"_id": 0})
+            req['item'] = item
+        
+        day['requirements'] = requirements
+    
+    # Calculate daily capacity usage
+    daily_usage = {}
+    for day in schedule_days:
+        date_key = day['schedule_date']
+        if date_key not in daily_usage:
+            daily_usage[date_key] = 0
+        daily_usage[date_key] += day['planned_drums']
+    
+    return {
+        'week_start': week_start,
+        'schedule_days': schedule_days,
+        'daily_capacity': 600,
+        'daily_usage': daily_usage
+    }
+
+@api_router.get("/production/campaign/{campaign_id}")
+async def get_campaign(campaign_id: str, current_user: dict = Depends(get_current_user)):
+    """Get campaign details with job orders and requirements"""
+    campaign = await db.production_campaigns.find_one({"id": campaign_id}, {"_id": 0})
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    
+    # Get product and packaging
+    product = await db.products.find_one({"id": campaign['product_id']}, {"_id": 0})
+    packaging = await db.packaging.find_one({"id": campaign['packaging_id']}, {"_id": 0})
+    
+    campaign['product'] = product
+    campaign['packaging'] = packaging
+    
+    # Get job links
+    job_links = await db.production_campaign_job_links.find(
+        {"campaign_id": campaign_id},
+        {"_id": 0}
+    ).to_list(1000)
+    
+    for link in job_links:
+        job_item = await db.job_order_items.find_one({"id": link['job_order_item_id']}, {"_id": 0})
+        if job_item:
+            job_order = await db.job_orders.find_one({"id": job_item['job_order_id']}, {"_id": 0})
+            link['job_item'] = job_item
+            link['job_order'] = job_order
+    
+    campaign['job_links'] = job_links
+    
+    # Get all schedule days for this campaign
+    schedule_days = await db.production_schedule_days.find(
+        {"campaign_id": campaign_id},
+        {"_id": 0}
+    ).sort("schedule_date", 1).to_list(1000)
+    
+    campaign['schedule_days'] = schedule_days
+    
+    return campaign
+
+@api_router.get("/production/arrivals")
+async def get_arrivals(week_start: str, current_user: dict = Depends(get_current_user)):
+    """Get incoming RAW + PACK materials for the week from PO ETAs"""
+    from datetime import datetime, timedelta
+    
+    week_start_date = datetime.fromisoformat(week_start)
+    week_end_date = week_start_date + timedelta(days=7)
+    
+    # Get PO lines with promised delivery dates in this week
+    pipeline = [
+        {'$match': {
+            'promised_delivery_date': {
+                '$gte': week_start_date.isoformat(),
+                '$lt': week_end_date.isoformat()
+            }
+        }},
+        {'$lookup': {
+            'from': 'purchase_orders',
+            'localField': 'po_id',
+            'foreignField': 'id',
+            'as': 'po'
+        }},
+        {'$unwind': '$po'},
+        {'$match': {
+            'po.status': {'$in': ['SENT', 'PARTIAL']}
+        }},
+        {'$lookup': {
+            'from': 'inventory_items',
+            'localField': 'item_id',
+            'foreignField': 'id',
+            'as': 'item'
+        }},
+        {'$unwind': '$item'},
+        {'$project': {
+            '_id': 0,
+            'po_number': '$po.po_number',
+            'item_id': 1,
+            'item_name': '$item.name',
+            'item_type': 1,
+            'qty': 1,
+            'uom': 1,
+            'received_qty': 1,
+            'remaining_qty': {'$subtract': ['$qty', '$received_qty']},
+            'promised_delivery_date': 1,
+            'required_by': 1
+        }}
+    ]
+    
+    arrivals = await db.purchase_order_lines.aggregate(pipeline).to_list(1000)
+    
+    # Group by item type
+    raw_arrivals = [a for a in arrivals if a['item_type'] == 'RAW']
+    pack_arrivals = [a for a in arrivals if a['item_type'] == 'PACK']
+    
+    return {
+        'week_start': week_start,
+        'raw_arrivals': raw_arrivals,
+        'pack_arrivals': pack_arrivals,
+        'total_arrivals': len(arrivals)
+    }
+
+@api_router.post("/production/schedule/approve")
+async def approve_schedule(week_start: str, current_user: dict = Depends(get_current_user)):
+    """Approve schedule and create material reservations for READY days"""
+    if current_user["role"] not in ["admin", "production"]:
+        raise HTTPException(status_code=403, detail="Only admin/production can approve schedule")
+    
+    # Get all READY schedule days for this week
+    ready_days = await db.production_schedule_days.find({
+        "week_start": week_start,
+        "status": "READY"
+    }, {"_id": 0}).to_list(1000)
+    
+    reservations_created = 0
+    
+    for day in ready_days:
+        # Get all requirements for this day
+        requirements = await db.production_day_requirements.find({
+            "schedule_day_id": day['id']
+        }, {"_id": 0}).to_list(1000)
+        
+        # Create reservations
+        for req in requirements:
+            reservation = InventoryReservation(
+                item_id=req['item_id'],
+                ref_type="SCHEDULE_DAY",
+                ref_id=day['id'],
+                qty=req['required_qty']
+            )
+            await db.inventory_reservations.insert_one(reservation.model_dump())
+            reservations_created += 1
+        
+        # Update day status (could add "APPROVED" status if needed)
+        await db.production_schedule_days.update_one(
+            {"id": day['id']},
+            {"$set": {"status": "READY"}}  # Keep as READY for now
+        )
+    
+    return {
+        "success": True,
+        "message": f"Schedule approved and {reservations_created} material reservations created",
+        "ready_days_approved": len(ready_days),
+        "reservations_created": reservations_created
+    }
+
 app.include_router(api_router)
 
 app.add_middleware(
