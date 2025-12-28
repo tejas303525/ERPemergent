@@ -834,6 +834,106 @@ async def get_shipping_bookings(status: Optional[str] = None, current_user: dict
     bookings = await db.shipping_bookings.find(query, {"_id": 0}).sort("created_at", -1).to_list(1000)
     return bookings
 
+@api_router.get("/shipping-bookings/{booking_id}")
+async def get_shipping_booking(booking_id: str, current_user: dict = Depends(get_current_user)):
+    booking = await db.shipping_bookings.find_one({"id": booking_id}, {"_id": 0})
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    
+    # Get linked job orders details
+    job_orders = []
+    for job_id in booking.get("job_order_ids", []):
+        job = await db.job_orders.find_one({"id": job_id}, {"_id": 0})
+        if job:
+            job_orders.append(job)
+    
+    return {**booking, "job_orders": job_orders}
+
+@api_router.put("/shipping-bookings/{booking_id}/cro")
+async def update_shipping_cro(booking_id: str, data: ShippingBookingUpdate, current_user: dict = Depends(get_current_user)):
+    """Update CRO details and auto-generate transport schedules"""
+    if current_user["role"] not in ["admin", "shipping"]:
+        raise HTTPException(status_code=403, detail="Only shipping can update bookings")
+    
+    booking = await db.shipping_bookings.find_one({"id": booking_id}, {"_id": 0})
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    
+    update_data = {k: v for k, v in data.model_dump().items() if v is not None}
+    
+    # Calculate pickup date (3 days before cutoff)
+    if data.cutoff_date:
+        cutoff = datetime.fromisoformat(data.cutoff_date)
+        pickup = cutoff - timedelta(days=3)
+        update_data["pickup_date"] = pickup.strftime("%Y-%m-%d")
+    
+    # Update status to cro_received if CRO number provided
+    if data.cro_number and booking.get("status") == "pending":
+        update_data["status"] = "cro_received"
+    
+    await db.shipping_bookings.update_one({"id": booking_id}, {"$set": update_data})
+    
+    # Auto-generate transport schedule if CRO received and cutoff set
+    if data.cro_number and data.cutoff_date:
+        existing_schedule = await db.transport_schedules.find_one({"shipping_booking_id": booking_id})
+        
+        if not existing_schedule:
+            # Get job order details
+            job_numbers = []
+            product_names = []
+            for job_id in booking.get("job_order_ids", []):
+                job = await db.job_orders.find_one({"id": job_id}, {"_id": 0})
+                if job:
+                    job_numbers.append(job["job_number"])
+                    product_names.append(job["product_name"])
+            
+            # Create transport schedule
+            schedule_number = await generate_sequence("TRN", "transport_schedules")
+            pickup_date = (datetime.fromisoformat(data.cutoff_date) - timedelta(days=3)).strftime("%Y-%m-%d")
+            
+            transport_schedule = TransportSchedule(
+                shipping_booking_id=booking_id,
+                transporter=None,
+                vehicle_type="Container Chassis",
+                pickup_date=pickup_date,
+                pickup_location="Factory",
+                schedule_number=schedule_number,
+                booking_number=booking["booking_number"],
+                cro_number=data.cro_number,
+                vessel_name=data.vessel_name,
+                vessel_date=data.vessel_date,
+                cutoff_date=data.cutoff_date,
+                container_type=booking["container_type"],
+                container_count=booking["container_count"],
+                port_of_loading=booking["port_of_loading"],
+                job_numbers=job_numbers,
+                product_names=product_names,
+                auto_generated=True,
+                created_by=current_user["id"]
+            )
+            await db.transport_schedules.insert_one(transport_schedule.model_dump())
+            
+            # Create dispatch schedule for security
+            dispatch_schedule = DispatchSchedule(
+                transport_schedule_id=transport_schedule.id,
+                schedule_number=schedule_number,
+                booking_number=booking["booking_number"],
+                job_numbers=job_numbers,
+                product_names=product_names,
+                container_type=booking["container_type"],
+                container_count=booking["container_count"],
+                pickup_date=pickup_date,
+                expected_arrival=pickup_date,  # Same day arrival at factory
+                vessel_date=data.vessel_date or "",
+                cutoff_date=data.cutoff_date
+            )
+            await db.dispatch_schedules.insert_one(dispatch_schedule.model_dump())
+            
+            # Update booking status
+            await db.shipping_bookings.update_one({"id": booking_id}, {"$set": {"status": "transport_scheduled"}})
+    
+    return {"message": "CRO details updated and transport schedule generated"}
+
 @api_router.put("/shipping-bookings/{booking_id}")
 async def update_shipping_booking(booking_id: str, cro_number: Optional[str] = None, status: Optional[str] = None, current_user: dict = Depends(get_current_user)):
     update_data = {}
