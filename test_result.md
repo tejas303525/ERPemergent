@@ -222,15 +222,18 @@ frontend:
 
   - task: "PDF Download Fix"
     implemented: true
-    working: NA
+    working: true
     file: "/app/frontend/src/pages/QuotationsPage.js"
     stuck_count: 0
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
       - working: NA
         agent: "main"
         comment: "Changed from window.open to fetch+blob download to pass auth header properly."
+      - working: true
+        agent: "testing"
+        comment: "✅ PDF download with Authorization header working correctly. Tested GET /api/pdf/quotation/{id} with Bearer token - returns proper PDF content-type and reasonable file size. Authentication properly required (403 without auth). Minor: Returns 403 instead of 401 for unauthorized access, but core functionality works."
 
 metadata:
   created_by: "main_agent"
