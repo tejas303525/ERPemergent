@@ -33,6 +33,7 @@ const menuItems = [
   { icon: ShoppingCart, label: 'Sales Orders', path: '/sales-orders', roles: ['admin', 'sales', 'finance'] },
   { icon: Factory, label: 'Job Orders', path: '/job-orders', roles: ['admin', 'production', 'procurement'] },
   { icon: Calendar, label: 'Production Schedule', path: '/production-schedule', roles: ['admin', 'production', 'procurement'] },
+  { icon: Package, label: 'Drum Schedule (NEW)', path: '/drum-schedule', roles: ['admin', 'production', 'procurement'] },
   { icon: FlaskConical, label: 'Blend Reports', path: '/blend-reports', roles: ['admin', 'production', 'qc'] },
   { icon: Boxes, label: 'Inventory', path: '/inventory', roles: ['admin', 'inventory', 'production', 'procurement'] },
   { icon: Receipt, label: 'GRN', path: '/grn', roles: ['admin', 'security', 'inventory'] },
