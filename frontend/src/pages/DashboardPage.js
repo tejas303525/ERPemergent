@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
 import { formatCurrency, formatDate, getStatusColor } from '../lib/utils';
+import NotificationPanel from '../components/NotificationPanel';
 import {
   FileText,
   ShoppingCart,
