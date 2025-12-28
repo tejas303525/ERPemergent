@@ -739,6 +739,12 @@ async def update_job_status(job_id: str, status: str, current_user: dict = Depen
     result = await db.job_orders.update_one({"id": job_id}, {"$set": update_data})
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Job order not found")
+    
+    # Send email notification for status changes
+    job = await db.job_orders.find_one({"id": job_id}, {"_id": 0})
+    if job:
+        asyncio.create_task(notify_job_order_status_change(job, status))
+    
     return {"message": f"Job status updated to {status}"}
 
 # ==================== GRN ROUTES ====================
