@@ -146,4 +146,25 @@ export const dashboardAPI = {
   getRecentActivities: () => api.get('/dashboard/recent-activities'),
 };
 
+// Production Scheduling
+export const productionAPI = {
+  getSchedule: () => api.get('/production/schedule'),
+  getProcurementList: () => api.get('/production/procurement-list'),
+};
+
+// Blend Reports
+export const blendReportAPI = {
+  getAll: (jobOrderId, status) => api.get('/blend-reports', { params: { job_order_id: jobOrderId, status } }),
+  getOne: (id) => api.get(`/blend-reports/${id}`),
+  create: (data) => api.post('/blend-reports', data),
+  approve: (id) => api.put(`/blend-reports/${id}/approve`),
+  downloadPDF: (id) => `${API_BASE}/pdf/blend-report/${id}`,
+};
+
+// PDF Downloads
+export const pdfAPI = {
+  getCROUrl: (bookingId) => `${API_BASE}/pdf/cro/${bookingId}`,
+  getBlendReportUrl: (reportId) => `${API_BASE}/pdf/blend-report/${reportId}`,
+};
+
 export default api;
