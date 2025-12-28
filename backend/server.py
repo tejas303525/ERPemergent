@@ -602,10 +602,22 @@ async def approve_quotation(quotation_id: str, current_user: dict = Depends(get_
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Quotation not found or already processed")
     
-    # Send email notification
+    # Send email notification and create in-app notification
     quotation = await db.quotations.find_one({"id": quotation_id}, {"_id": 0})
     if quotation:
         asyncio.create_task(notify_quotation_approved(quotation))
+        # Create in-app notification
+        await db.notifications.insert_one({
+            "id": str(uuid.uuid4()),
+            "title": "Quotation Approved",
+            "message": f"Quotation {quotation.get('pfi_number')} for {quotation.get('customer_name')} has been approved",
+            "type": "success",
+            "link": "/quotations",
+            "user_id": None,
+            "is_read": False,
+            "created_by": "system",
+            "created_at": datetime.now(timezone.utc).isoformat()
+        })
     
     return {"message": "Quotation approved"}
 
