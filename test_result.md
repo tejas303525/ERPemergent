@@ -228,20 +228,19 @@ frontend:
 
 metadata:
   created_by: "main_agent"
-  version: "1.0"
-  test_sequence: 1
+  version: "1.1"
+  test_sequence: 2
   run_ui: true
 
 test_plan:
-  current_focus: []
+  current_focus:
+    - "Notifications API"
+    - "User Management API"
+    - "PDF Download Fix"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
 
 agent_communication:
   - agent: "main"
-    message: "Completed implementation of 4 new features. Frontend navigation and routes added. PDF generation for quotations verified via curl. Need testing agent to validate: 1) Email notifications trigger on key events, 2) Production schedule API returns correct data structure, 3) Blend reports full CRUD flow, 4) PDF downloads work end-to-end in browser."
-  - agent: "testing"
-    message: "✅ COMPREHENSIVE TESTING COMPLETED - All 4 new ERP features are working correctly: 1) Production Scheduling API - Both endpoints return correct data structures and properly categorize jobs by material availability. 2) Blend Reports CRUD - Full workflow tested including create, list, get single, and approve endpoints. 3) PDF Generation - Both quotation and blend report PDFs generate correctly with proper content-type and file sizes. 4) Email Notifications - All trigger events tested (quotation approval, job status change, CRO received) with notifications sent asynchronously. Minor: Resend API has rate limits in test environment but core functionality works. All backend APIs are production-ready."
-  - agent: "testing"
-    message: "✅ FRONTEND UI TESTING COMPLETED - All 4 new ERP frontend features are working perfectly: 1) Production Schedule Page - Loads correctly with title, 4 stat cards (Total Pending, Ready to Produce, Partial Materials, Awaiting Procurement), tab navigation (Ready, Partial, Not Ready, Procurement List) all functional, Refresh button works. 2) Blend Reports Page - Loads with correct title, New Blend Report button opens dialog successfully, table shows correct columns (Report #, Job #, Product, Batch #, Blend Date, Output, Yield, Status, Actions). 3) Quotations Page - PDF download buttons visible in Actions column, download functionality works (initiates PDF download). 4) Navigation/Sidebar - Both Production Schedule and Blend Reports links visible and functional in sidebar, navigation between pages works correctly. No console errors detected. All UI elements render properly and interactive features work as expected."
+    message: "Fixed PDF download auth issue by changing to fetch+blob. Added Notifications panel to dashboard. Created User Management page. Backend APIs added for both features."
