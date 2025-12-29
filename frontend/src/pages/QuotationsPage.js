@@ -51,6 +51,7 @@ export default function QuotationsPage() {
     quantity: 0,
     unit_price: 0,
     packaging: 'Bulk',
+    net_weight_kg: null,
   });
 
   useEffect(() => {
@@ -103,11 +104,16 @@ export default function QuotationsPage() {
       toast.error('Please select a product and enter quantity');
       return;
     }
+    // Require net_weight_kg for non-Bulk packaging
+    if (newItem.packaging !== 'Bulk' && !newItem.net_weight_kg) {
+      toast.error('Please enter net weight (kg) for packaged items');
+      return;
+    }
     setForm({
       ...form,
       items: [...form.items, { ...newItem, total: newItem.quantity * newItem.unit_price }],
     });
-    setNewItem({ product_id: '', product_name: '', sku: '', quantity: 0, unit_price: 0, packaging: 'Bulk' });
+    setNewItem({ product_id: '', product_name: '', sku: '', quantity: 0, unit_price: 0, packaging: 'Bulk', net_weight_kg: null });
   };
 
   const removeItem = (index) => {
