@@ -411,6 +411,7 @@ export default function QuotationsPage() {
                             <th>Qty</th>
                             <th>Price</th>
                             <th>Packaging</th>
+                            <th>Net Wt (kg)</th>
                             <th>Total</th>
                             <th></th>
                           </tr>
@@ -423,6 +424,7 @@ export default function QuotationsPage() {
                               <td>{item.quantity}</td>
                               <td>{formatCurrency(item.unit_price, form.currency)}</td>
                               <td>{item.packaging}</td>
+                              <td>{item.net_weight_kg || '-'}</td>
                               <td>{formatCurrency(item.quantity * item.unit_price, form.currency)}</td>
                               <td>
                                 <Button variant="ghost" size="icon" onClick={() => removeItem(idx)}>
