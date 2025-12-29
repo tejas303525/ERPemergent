@@ -23,6 +23,7 @@ import {
   Calendar,
   FlaskConical,
   UserCog,
+  DollarSign,
 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { cn } from '../../lib/utils';
@@ -43,6 +44,8 @@ const menuItems = [
   { icon: DoorOpen, label: 'Dispatch Gate', path: '/dispatch-gate', roles: ['admin', 'security', 'shipping', 'transport'] },
   { icon: FileCheck, label: 'Documentation', path: '/documentation', roles: ['admin', 'documentation'] },
   { icon: ClipboardCheck, label: 'Quality Control', path: '/qc', roles: ['admin', 'qc'] },
+  { icon: ShoppingCart, label: 'Procurement', path: '/procurement', roles: ['admin', 'procurement'] },
+  { icon: DollarSign, label: 'Finance Approval', path: '/finance-approval', roles: ['admin', 'finance'] },
   { icon: Users, label: 'Customers', path: '/customers', roles: ['admin', 'sales'] },
   { icon: Package, label: 'Products', path: '/products', roles: ['admin', 'inventory', 'sales'] },
   { icon: UserCog, label: 'User Management', path: '/users', roles: ['admin'] },
