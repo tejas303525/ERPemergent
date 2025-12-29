@@ -347,7 +347,7 @@ export default function QuotationsPage() {
                 {/* Items Section */}
                 <div className="border-t border-border pt-4">
                   <h3 className="font-semibold mb-4">Items</h3>
-                  <div className="grid grid-cols-6 gap-2 mb-3">
+                  <div className="grid grid-cols-7 gap-2 mb-3">
                     <div className="col-span-2">
                       <Select value={newItem.product_id} onValueChange={handleProductSelect}>
                         <SelectTrigger data-testid="product-select">
@@ -372,7 +372,7 @@ export default function QuotationsPage() {
                       value={newItem.unit_price || ''}
                       onChange={(e) => setNewItem({...newItem, unit_price: parseFloat(e.target.value)})}
                     />
-                    <Select value={newItem.packaging} onValueChange={(v) => setNewItem({...newItem, packaging: v})}>
+                    <Select value={newItem.packaging} onValueChange={(v) => setNewItem({...newItem, packaging: v, net_weight_kg: v === 'Bulk' ? null : newItem.net_weight_kg})}>
                       <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
@@ -382,10 +382,24 @@ export default function QuotationsPage() {
                         ))}
                       </SelectContent>
                     </Select>
+                    {newItem.packaging !== 'Bulk' && (
+                      <Input
+                        type="number"
+                        placeholder="Net Wt (kg)"
+                        value={newItem.net_weight_kg || ''}
+                        onChange={(e) => setNewItem({...newItem, net_weight_kg: parseFloat(e.target.value)})}
+                        className="placeholder:text-xs"
+                      />
+                    )}
                     <Button type="button" variant="secondary" onClick={addItem} data-testid="add-item-btn">
                       <Plus className="w-4 h-4" />
                     </Button>
                   </div>
+                  {newItem.packaging !== 'Bulk' && (
+                    <p className="text-xs text-muted-foreground mb-3">
+                      Net weight per unit (e.g., 200 kg per drum)
+                    </p>
+                  )}
 
                   {form.items.length > 0 && (
                     <div className="data-grid">
