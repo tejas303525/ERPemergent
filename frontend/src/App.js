@@ -77,6 +77,9 @@ const AppRoutes = () => {
                 <Route path="/blend-reports" element={<BlendReportsPage />} />
                 <Route path="/procurement" element={<ProcurementPage />} />
                 <Route path="/finance-approval" element={<FinanceApprovalPage />} />
+                <Route path="/payables" element={<PayablesPage />} />
+                <Route path="/receivables" element={<ReceivablesPage />} />
+                <Route path="/logistics" element={<LogisticsPage />} />
                 <Route path="/users" element={<UsersPage />} />
               </Routes>
             </MainLayout>
