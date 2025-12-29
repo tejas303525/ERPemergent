@@ -140,9 +140,20 @@ const DrumSchedulePage = () => {
   
   // Generate 7 days from week_start
   const weekDays = Array.from({ length: 7 }, (_, i) => {
-    const date = new Date(weekStart);
-    date.setDate(date.getDate() + i);
-    return date.toISOString().split('T')[0];
+    try {
+      const date = new Date(weekStart);
+      if (isNaN(date.getTime())) {
+        // Invalid date, use current date
+        const today = new Date();
+        today.setDate(today.getDate() + i);
+        return today.toISOString().split('T')[0];
+      }
+      date.setDate(date.getDate() + i);
+      return date.toISOString().split('T')[0];
+    } catch (error) {
+      console.error('Error generating week days:', error);
+      return new Date().toISOString().split('T')[0];
+    }
   });
 
   const getDayName = (dateStr) => {
