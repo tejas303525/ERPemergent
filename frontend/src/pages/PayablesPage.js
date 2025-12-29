@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { payablesAPI, grnAPI } from '../lib/api';
 import { Button } from '../components/ui/button';
-import { DollarSign, Check, Clock, AlertTriangle, FileText, X } from 'lucide-react';
+import { DollarSign, Check, Clock, AlertTriangle, FileText, Book, TrendingDown, Building } from 'lucide-react';
 import { toast } from 'sonner';
 
 const PayablesPage = () => {
@@ -9,7 +9,7 @@ const PayablesPage = () => {
   const [aging, setAging] = useState({ current: 0, '30_days': 0, '60_days': 0, '90_plus': 0 });
   const [pendingGRNs, setPendingGRNs] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState('bills');
+  const [activeTab, setActiveTab] = useState('ledger');
 
   useEffect(() => {
     loadData();
@@ -74,6 +74,37 @@ const PayablesPage = () => {
 
   const totalOutstanding = Object.values(aging).reduce((a, b) => a + b, 0);
 
+  // Group bills by supplier for ledger view
+  const supplierLedger = bills.reduce((acc, bill) => {
+    const supplier = bill.supplier_name || 'Unknown Supplier';
+    if (!acc[supplier]) {
+      acc[supplier] = {
+        supplier,
+        bills: [],
+        totalAmount: 0,
+        paidAmount: 0,
+        balance: 0
+      };
+    }
+    acc[supplier].bills.push(bill);
+    acc[supplier].totalAmount += bill.amount || 0;
+    if (bill.status === 'PAID') {
+      acc[supplier].paidAmount += bill.amount || 0;
+    } else {
+      acc[supplier].balance += bill.amount || 0;
+    }
+    return acc;
+  }, {});
+
+  // Group bills by type
+  const billsByType = {
+    PO_RFQ: bills.filter(b => b.ref_type === 'PO' || b.ref_type === 'RFQ'),
+    TRANSPORT: bills.filter(b => b.ref_type === 'TRANSPORT'),
+    SHIPPING: bills.filter(b => b.ref_type === 'SHIPPING'),
+    IMPORT: bills.filter(b => b.ref_type === 'IMPORT'),
+    OTHER: bills.filter(b => !['PO', 'RFQ', 'TRANSPORT', 'SHIPPING', 'IMPORT'].includes(b.ref_type))
+  };
+
   return (
     <div className="p-6 max-w-[1600px] mx-auto" data-testid="payables-page">
       {/* Header */}
@@ -82,7 +113,7 @@ const PayablesPage = () => {
           <DollarSign className="w-8 h-8 text-red-500" />
           Accounts Payable
         </h1>
-        <p className="text-muted-foreground mt-1">Bills, GRN Approvals & Supplier Payments</p>
+        <p className="text-muted-foreground mt-1">Bills, GRN Approvals, Supplier Ledger & Payments</p>
       </div>
 
       {/* Aging Summary */}
@@ -110,16 +141,21 @@ const PayablesPage = () => {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-2 mb-6">
+      <div className="flex gap-2 mb-6 flex-wrap">
         {[
+          { id: 'ledger', label: 'Supplier Ledger', icon: Book },
           { id: 'grn', label: 'GRN Approvals', icon: FileText, count: pendingGRNs.length },
-          { id: 'bills', label: 'Payable Bills', icon: DollarSign, count: bills.filter(b => b.status === 'PENDING').length },
+          { id: 'po_rfq', label: 'PO/RFQ Bills', icon: DollarSign, count: billsByType.PO_RFQ.filter(b => b.status !== 'PAID').length },
+          { id: 'transport', label: 'Transport Bills', icon: TrendingDown, count: billsByType.TRANSPORT.filter(b => b.status !== 'PAID').length },
+          { id: 'shipping', label: 'Shipping Bills', icon: Building, count: billsByType.SHIPPING.filter(b => b.status !== 'PAID').length },
+          { id: 'import', label: 'Import Bills', icon: AlertTriangle, count: billsByType.IMPORT.filter(b => b.status !== 'PAID').length },
         ].map((tab) => (
           <Button
             key={tab.id}
             variant={activeTab === tab.id ? 'default' : 'outline'}
             onClick={() => setActiveTab(tab.id)}
             data-testid={`tab-${tab.id}`}
+            size="sm"
           >
             <tab.icon className="w-4 h-4 mr-2" />
             {tab.label}
@@ -136,6 +172,61 @@ const PayablesPage = () => {
         </div>
       ) : (
         <>
+          {/* Supplier Ledger Tab */}
+          {activeTab === 'ledger' && (
+            <div className="space-y-4">
+              <h2 className="text-xl font-semibold">Supplier Ledger Balance</h2>
+              {Object.keys(supplierLedger).length === 0 ? (
+                <div className="glass p-8 rounded-lg border border-border text-center">
+                  <Book className="w-12 h-12 text-muted-foreground mx-auto mb-4 opacity-50" />
+                  <p className="text-muted-foreground">No supplier transactions</p>
+                </div>
+              ) : (
+                <div className="glass rounded-lg border border-border overflow-hidden">
+                  <table className="w-full">
+                    <thead className="bg-muted/30">
+                      <tr>
+                        <th className="p-3 text-left text-xs font-medium text-muted-foreground">Supplier</th>
+                        <th className="p-3 text-right text-xs font-medium text-muted-foreground">Total Billed</th>
+                        <th className="p-3 text-right text-xs font-medium text-muted-foreground">Paid</th>
+                        <th className="p-3 text-right text-xs font-medium text-muted-foreground">Outstanding Balance</th>
+                        <th className="p-3 text-right text-xs font-medium text-muted-foreground">Bills</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {Object.values(supplierLedger).map((ledger, idx) => (
+                        <tr key={idx} className="border-t border-border/50 hover:bg-muted/10">
+                          <td className="p-3 font-medium">{ledger.supplier}</td>
+                          <td className="p-3 text-right font-mono">${ledger.totalAmount.toLocaleString()}</td>
+                          <td className="p-3 text-right font-mono text-green-400">${ledger.paidAmount.toLocaleString()}</td>
+                          <td className={`p-3 text-right font-mono font-bold ${ledger.balance > 0 ? 'text-red-400' : 'text-green-400'}`}>
+                            ${ledger.balance.toLocaleString()}
+                          </td>
+                          <td className="p-3 text-right text-muted-foreground">{ledger.bills.length}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot className="bg-muted/20 border-t border-border">
+                      <tr>
+                        <td className="p-3 font-bold">TOTAL</td>
+                        <td className="p-3 text-right font-mono font-bold">
+                          ${Object.values(supplierLedger).reduce((sum, l) => sum + l.totalAmount, 0).toLocaleString()}
+                        </td>
+                        <td className="p-3 text-right font-mono font-bold text-green-400">
+                          ${Object.values(supplierLedger).reduce((sum, l) => sum + l.paidAmount, 0).toLocaleString()}
+                        </td>
+                        <td className="p-3 text-right font-mono font-bold text-red-400">
+                          ${Object.values(supplierLedger).reduce((sum, l) => sum + l.balance, 0).toLocaleString()}
+                        </td>
+                        <td className="p-3 text-right font-bold">{bills.length}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* GRN Approvals Tab */}
           {activeTab === 'grn' && (
             <div className="space-y-4">
@@ -179,55 +270,106 @@ const PayablesPage = () => {
             </div>
           )}
 
-          {/* Bills Tab */}
-          {activeTab === 'bills' && (
-            <div className="space-y-4">
-              <h2 className="text-xl font-semibold">Payable Bills</h2>
-              {bills.length === 0 ? (
-                <div className="glass p-8 rounded-lg border border-border text-center">
-                  <FileText className="w-12 h-12 text-muted-foreground mx-auto mb-4 opacity-50" />
-                  <p className="text-muted-foreground">No bills</p>
-                </div>
-              ) : (
-                <div className="grid gap-4">
-                  {bills.map((bill) => (
-                    <div key={bill.id} className="glass p-4 rounded-lg border border-border" data-testid={`bill-${bill.id}`}>
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className="font-bold">{bill.bill_number}</span>
-                            <span className={`px-2 py-0.5 rounded text-xs ${
-                              bill.status === 'PAID' ? 'bg-green-500/20 text-green-400' :
-                              bill.status === 'APPROVED' ? 'bg-blue-500/20 text-blue-400' :
-                              'bg-amber-500/20 text-amber-400'
-                            }`}>
-                              {bill.status}
-                            </span>
-                          </div>
-                          <p className="text-sm text-muted-foreground">Type: {bill.ref_type}</p>
-                          <p className="text-lg font-bold text-red-400">{bill.currency} {bill.amount?.toLocaleString()}</p>
-                        </div>
-                        <div className="flex gap-2">
-                          {bill.status === 'PENDING' && (
-                            <Button size="sm" onClick={() => handleApproveBill(bill.id)} className="bg-blue-500 hover:bg-blue-600">
-                              Approve
-                            </Button>
-                          )}
-                          {bill.status === 'APPROVED' && (
-                            <Button size="sm" onClick={() => handlePayBill(bill.id)} className="bg-green-500 hover:bg-green-600">
-                              Mark Paid
-                            </Button>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+          {/* Bills by Type Tabs */}
+          {['po_rfq', 'transport', 'shipping', 'import'].includes(activeTab) && (
+            <BillsTable 
+              bills={
+                activeTab === 'po_rfq' ? billsByType.PO_RFQ :
+                activeTab === 'transport' ? billsByType.TRANSPORT :
+                activeTab === 'shipping' ? billsByType.SHIPPING :
+                billsByType.IMPORT
+              }
+              title={
+                activeTab === 'po_rfq' ? 'PO/RFQ Bills' :
+                activeTab === 'transport' ? 'Transport Bills' :
+                activeTab === 'shipping' ? 'Shipping Bills' :
+                'Import Bills'
+              }
+              onApprove={handleApproveBill}
+              onPay={handlePayBill}
+            />
           )}
         </>
       )}
+    </div>
+  );
+};
+
+// Bills Table Component
+const BillsTable = ({ bills, title, onApprove, onPay }) => {
+  if (bills.length === 0) {
+    return (
+      <div className="space-y-4">
+        <h2 className="text-xl font-semibold">{title}</h2>
+        <div className="glass p-8 rounded-lg border border-border text-center">
+          <FileText className="w-12 h-12 text-muted-foreground mx-auto mb-4 opacity-50" />
+          <p className="text-muted-foreground">No bills in this category</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <h2 className="text-xl font-semibold">{title}</h2>
+      <div className="glass rounded-lg border border-border overflow-hidden">
+        <table className="w-full">
+          <thead className="bg-muted/30">
+            <tr>
+              <th className="p-3 text-left text-xs font-medium text-muted-foreground">Bill #</th>
+              <th className="p-3 text-left text-xs font-medium text-muted-foreground">Supplier</th>
+              <th className="p-3 text-left text-xs font-medium text-muted-foreground">Reference</th>
+              <th className="p-3 text-right text-xs font-medium text-muted-foreground">Amount</th>
+              <th className="p-3 text-left text-xs font-medium text-muted-foreground">Status</th>
+              <th className="p-3 text-left text-xs font-medium text-muted-foreground">Date</th>
+              <th className="p-3 text-left text-xs font-medium text-muted-foreground">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {bills.map((bill) => (
+              <tr key={bill.id} className="border-t border-border/50 hover:bg-muted/10" data-testid={`bill-${bill.id}`}>
+                <td className="p-3 font-medium">{bill.bill_number}</td>
+                <td className="p-3">{bill.supplier_name || '-'}</td>
+                <td className="p-3 text-sm text-muted-foreground">{bill.ref_type} - {bill.ref_number || '-'}</td>
+                <td className="p-3 text-right font-mono font-bold text-red-400">
+                  {bill.currency} {bill.amount?.toLocaleString()}
+                </td>
+                <td className="p-3">
+                  <span className={`px-2 py-0.5 rounded text-xs ${
+                    bill.status === 'PAID' ? 'bg-green-500/20 text-green-400' :
+                    bill.status === 'APPROVED' ? 'bg-blue-500/20 text-blue-400' :
+                    'bg-amber-500/20 text-amber-400'
+                  }`}>
+                    {bill.status}
+                  </span>
+                </td>
+                <td className="p-3 text-sm text-muted-foreground">
+                  {new Date(bill.created_at).toLocaleDateString()}
+                </td>
+                <td className="p-3">
+                  <div className="flex gap-2">
+                    {bill.status === 'PENDING' && (
+                      <Button size="sm" onClick={() => onApprove(bill.id)} className="bg-blue-500 hover:bg-blue-600">
+                        Approve
+                      </Button>
+                    )}
+                    {bill.status === 'APPROVED' && (
+                      <Button size="sm" onClick={() => onPay(bill.id)} className="bg-green-500 hover:bg-green-600">
+                        Mark Paid
+                      </Button>
+                    )}
+                    {bill.status === 'PAID' && (
+                      <span className="text-xs text-green-400 flex items-center">
+                        <Check className="w-3 h-3 mr-1" /> Paid
+                      </span>
+                    )}
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 };
