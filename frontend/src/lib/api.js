@@ -186,10 +186,45 @@ export const purchaseOrderAPI = {
 // Procurement Requisitions
 export const procurementReqAPI = {
   getAll: (status) => api.get('/procurement-requisitions', { params: { status } }),
+  autoGenerate: (weekStart) => api.post(`/procurement/auto-generate?week_start=${weekStart}`),
 };
 
-// Blend Reports
-export const blendReportAPI = {
+// RFQ (Request for Quotation)
+export const rfqAPI = {
+  getAll: (status) => api.get('/rfq', { params: { status } }),
+  getOne: (id) => api.get(`/rfq/${id}`),
+  create: (data) => api.post('/rfq', data),
+  send: (id) => api.put(`/rfq/${id}/send`),
+  updateQuote: (id, data) => api.put(`/rfq/${id}/quote`, data),
+  convertToPO: (id) => api.post(`/rfq/${id}/convert-to-po`),
+};
+
+// Email Outbox
+export const emailAPI = {
+  getOutbox: (status) => api.get('/email/outbox', { params: { status } }),
+  queue: (data) => api.post('/email/queue', data),
+  processQueue: () => api.post('/email/process-queue'),
+};
+
+// Inventory Items (RAW + PACK) - Extended
+export const inventoryItemAPI = {
+  getAll: (itemType) => api.get('/inventory-items', { params: { item_type: itemType } }),
+  getAvailability: (id) => api.get(`/inventory-items/${id}/availability`),
+  create: (data) => api.post('/inventory-items', data),
+};
+
+// Purchase Orders - Extended
+export const purchaseOrderAPI = {
+  getAll: (status) => api.get('/purchase-orders', { params: { status } }),
+  getOne: (id) => api.get(`/purchase-orders/${id}`),
+  getPendingApproval: () => api.get('/purchase-orders/pending-approval'),
+  create: (data) => api.post('/purchase-orders', data),
+  createLine: (data) => api.post('/purchase-order-lines', data),
+  updateStatus: (id, status) => api.put(`/purchase-orders/${id}/status`, null, { params: { status } }),
+  financeApprove: (id) => api.put(`/purchase-orders/${id}/finance-approve`),
+  financeReject: (id, reason) => api.put(`/purchase-orders/${id}/finance-reject`, null, { params: { reason } }),
+  send: (id) => api.put(`/purchase-orders/${id}/send`),
+};
   getAll: (jobOrderId, status) => api.get('/blend-reports', { params: { job_order_id: jobOrderId, status } }),
   getOne: (id) => api.get(`/blend-reports/${id}`),
   create: (data) => api.post('/blend-reports', data),
