@@ -3189,6 +3189,180 @@ async def process_email_queue(current_user: dict = Depends(get_current_user)):
 
 # ==================== PHASE 4: AUTO PROCUREMENT FROM SHORTAGES ====================
 
+@api_router.get("/procurement/shortages")
+async def get_procurement_shortages(current_user: dict = Depends(get_current_user)):
+    """Get ALL material shortages derived from BOMs - NOT from job_orders.bom
+    
+    THIS IS THE SOURCE OF TRUTH FOR PROCUREMENT NEEDS.
+    Raw materials come from product_boms/product_bom_items.
+    Packaging materials come from packaging_boms/packaging_bom_items.
+    """
+    
+    # Get all pending job orders
+    pending_jobs = await db.job_orders.find(
+        {"status": {"$in": ["pending", "procurement", "in_production"]}},
+        {"_id": 0}
+    ).to_list(1000)
+    
+    shortages = {}  # {item_id: {details}}
+    
+    for job in pending_jobs:
+        product_id = job.get("product_id")
+        quantity = job.get("quantity", 0)
+        job_number = job.get("job_number", "Unknown")
+        
+        # Step 1: Get active product BOM for this product
+        product_bom = await db.product_boms.find_one({
+            "product_id": product_id,
+            "is_active": True
+        }, {"_id": 0})
+        
+        if product_bom:
+            # Get BOM items (RAW materials)
+            bom_items = await db.product_bom_items.find({
+                "bom_id": product_bom["id"]
+            }, {"_id": 0}).to_list(100)
+            
+            for bom_item in bom_items:
+                material_id = bom_item.get("material_item_id")
+                qty_per_kg = bom_item.get("qty_kg_per_kg_finished", 0)
+                
+                # Get product-packaging spec for net weight
+                spec = await db.product_packaging_specs.find_one({
+                    "product_id": product_id
+                }, {"_id": 0})
+                
+                net_weight_kg = spec.get("net_weight_kg", 200) if spec else 200  # Default 200kg per drum
+                
+                # Calculate total RAW material needed
+                finished_kg = quantity * net_weight_kg
+                required_qty = finished_kg * qty_per_kg
+                
+                # Get material details from inventory_items
+                material = await db.inventory_items.find_one({"id": material_id}, {"_id": 0})
+                if not material:
+                    continue
+                
+                # Get current balance
+                balance = await db.inventory_balances.find_one({"item_id": material_id}, {"_id": 0})
+                on_hand = balance.get("on_hand", 0) if balance else 0
+                
+                # Get reservations
+                reservations = await db.inventory_reservations.find({"item_id": material_id}, {"_id": 0}).to_list(1000)
+                reserved = sum(r.get("qty", 0) for r in reservations)
+                
+                available = on_hand - reserved
+                shortage = max(0, required_qty - available)
+                
+                if shortage > 0:
+                    if material_id not in shortages:
+                        shortages[material_id] = {
+                            "item_id": material_id,
+                            "item_name": material.get("name", "Unknown"),
+                            "item_sku": material.get("sku", "N/A"),
+                            "item_type": "RAW",
+                            "uom": material.get("uom", "KG"),
+                            "on_hand": on_hand,
+                            "reserved": reserved,
+                            "available": available,
+                            "total_required": 0,
+                            "total_shortage": 0,
+                            "jobs": []
+                        }
+                    
+                    shortages[material_id]["total_required"] += required_qty
+                    shortages[material_id]["total_shortage"] = max(0, shortages[material_id]["total_required"] - available)
+                    shortages[material_id]["jobs"].append({
+                        "job_number": job_number,
+                        "product_name": job.get("product_name", "Unknown"),
+                        "required_qty": required_qty
+                    })
+        
+        # Step 2: Get packaging BOM (PACK materials)
+        # First find the packaging used for this job (from sales order or default)
+        sales_order = await db.sales_orders.find_one({"id": job.get("sales_order_id")}, {"_id": 0})
+        if sales_order:
+            for item in sales_order.get("items", []):
+                if item.get("product_id") == product_id:
+                    packaging_name = item.get("packaging", "DRUM")
+                    break
+            else:
+                packaging_name = "DRUM"
+        else:
+            packaging_name = "DRUM"
+        
+        # Find packaging by name
+        packaging = await db.packaging.find_one({
+            "name": {"$regex": packaging_name, "$options": "i"}
+        }, {"_id": 0})
+        
+        if packaging:
+            packaging_bom = await db.packaging_boms.find_one({
+                "packaging_id": packaging["id"],
+                "is_active": True
+            }, {"_id": 0})
+            
+            if packaging_bom:
+                pack_items = await db.packaging_bom_items.find({
+                    "packaging_bom_id": packaging_bom["id"]
+                }, {"_id": 0}).to_list(100)
+                
+                for pack_item in pack_items:
+                    pack_id = pack_item.get("pack_item_id")
+                    qty_per_drum = pack_item.get("qty_per_drum", 1)
+                    
+                    required_qty = quantity * qty_per_drum
+                    
+                    # Get pack material details
+                    pack_material = await db.inventory_items.find_one({"id": pack_id}, {"_id": 0})
+                    if not pack_material:
+                        continue
+                    
+                    # Get balance
+                    balance = await db.inventory_balances.find_one({"item_id": pack_id}, {"_id": 0})
+                    on_hand = balance.get("on_hand", 0) if balance else 0
+                    
+                    # Get reservations
+                    reservations = await db.inventory_reservations.find({"item_id": pack_id}, {"_id": 0}).to_list(1000)
+                    reserved = sum(r.get("qty", 0) for r in reservations)
+                    
+                    available = on_hand - reserved
+                    shortage = max(0, required_qty - available)
+                    
+                    if shortage > 0:
+                        if pack_id not in shortages:
+                            shortages[pack_id] = {
+                                "item_id": pack_id,
+                                "item_name": pack_material.get("name", "Unknown"),
+                                "item_sku": pack_material.get("sku", "N/A"),
+                                "item_type": "PACK",
+                                "uom": pack_material.get("uom", "EA"),
+                                "on_hand": on_hand,
+                                "reserved": reserved,
+                                "available": available,
+                                "total_required": 0,
+                                "total_shortage": 0,
+                                "jobs": []
+                            }
+                        
+                        shortages[pack_id]["total_required"] += required_qty
+                        shortages[pack_id]["total_shortage"] = max(0, shortages[pack_id]["total_required"] - available)
+                        shortages[pack_id]["jobs"].append({
+                            "job_number": job_number,
+                            "product_name": job.get("product_name", "Unknown"),
+                            "required_qty": required_qty
+                        })
+    
+    # Convert to list and sort by shortage
+    shortage_list = sorted(shortages.values(), key=lambda x: x["total_shortage"], reverse=True)
+    
+    return {
+        "total_shortages": len(shortage_list),
+        "raw_shortages": [s for s in shortage_list if s["item_type"] == "RAW"],
+        "pack_shortages": [s for s in shortage_list if s["item_type"] == "PACK"],
+        "all_shortages": shortage_list
+    }
+
 @api_router.post("/procurement/auto-generate")
 async def auto_generate_procurement(week_start: str, current_user: dict = Depends(get_current_user)):
     """Auto-generate procurement requisitions from schedule shortages (Phase 4)"""
