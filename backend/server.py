@@ -121,6 +121,7 @@ class QuotationItem(BaseModel):
     unit_price: float
     packaging: str = "Bulk"
     net_weight_kg: Optional[float] = None  # Net weight per unit for packaging
+    weight_mt: Optional[float] = None  # Total weight in MT
     total: float = 0
 
 class QuotationCreate(BaseModel):
