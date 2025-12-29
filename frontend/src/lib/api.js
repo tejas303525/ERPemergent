@@ -84,10 +84,14 @@ export const jobOrderAPI = {
   updateStatus: (id, status) => api.put(`/job-orders/${id}/status`, null, { params: { status } }),
 };
 
-// GRN
+// GRN (with Payables Review)
 export const grnAPI = {
   getAll: () => api.get('/grn'),
   create: (data) => api.post('/grn', data),
+  getPendingPayables: () => api.get('/grn/pending-payables'),
+  payablesApprove: (id, notes) => api.put(`/grn/${id}/payables-approve`, null, { params: { notes } }),
+  payablesHold: (id, reason) => api.put(`/grn/${id}/payables-hold`, null, { params: { reason } }),
+  payablesReject: (id, reason) => api.put(`/grn/${id}/payables-reject`, null, { params: { reason } }),
 };
 
 // Delivery Orders
@@ -232,16 +236,6 @@ export const notificationAPI = {
   getUnreadCount: () => api.get('/notifications/unread-count'),
   markRead: (id) => api.put(`/notifications/${id}/read`),
   markAllRead: () => api.put('/notifications/read-all'),
-};
-
-// GRN (with Payables Review)
-export const grnAPI = {
-  getAll: () => api.get('/grn'),
-  create: (data) => api.post('/grn', data),
-  getPendingPayables: () => api.get('/grn/pending-payables'),
-  payablesApprove: (id, notes) => api.put(`/grn/${id}/payables-approve`, null, { params: { notes } }),
-  payablesHold: (id, reason) => api.put(`/grn/${id}/payables-hold`, null, { params: { reason } }),
-  payablesReject: (id, reason) => api.put(`/grn/${id}/payables-reject`, null, { params: { reason } }),
 };
 
 // Procurement Shortages (from BOMs)
