@@ -2381,11 +2381,108 @@ async def create_inventory_item(data: InventoryItemCreate, current_user: dict = 
 
 @api_router.get("/inventory-items")
 async def get_inventory_items(item_type: Optional[str] = None, current_user: dict = Depends(get_current_user)):
+    """Get inventory items with balance and calculated availability status"""
     query = {'is_active': True}
     if item_type:
         query['item_type'] = item_type
     items = await db.inventory_items.find(query, {"_id": 0}).to_list(1000)
-    return items
+    
+    # Enrich with balance data and calculate status
+    enriched_items = []
+    for item in items:
+        balance = await db.inventory_balances.find_one({"item_id": item["id"]}, {"_id": 0})
+        on_hand = balance.get("on_hand", 0) if balance else 0
+        
+        # Calculate reserved quantity from reservations
+        reservations = await db.inventory_reservations.find({"item_id": item["id"]}, {"_id": 0}).to_list(1000)
+        reserved = sum(r.get("qty", 0) for r in reservations)
+        
+        # Calculate inbound from open PO lines
+        po_lines = await db.purchase_order_lines.find({
+            "item_id": item["id"],
+            "status": {"$in": ["OPEN", "PARTIAL"]}
+        }, {"_id": 0}).to_list(1000)
+        inbound = sum(line.get("qty", 0) - line.get("received_qty", 0) for line in po_lines)
+        
+        # Calculate availability
+        available = on_hand - reserved
+        
+        # Determine status
+        if available > 0:
+            status = "IN_STOCK"
+        elif inbound > 0:
+            status = "INBOUND"
+        else:
+            status = "OUT_OF_STOCK"
+        
+        enriched_item = {
+            **item,
+            "on_hand": on_hand,
+            "reserved": reserved,
+            "available": available,
+            "inbound": inbound,
+            "status": status
+        }
+        enriched_items.append(enriched_item)
+    
+    return enriched_items
+
+@api_router.get("/inventory-items/{item_id}/availability")
+async def get_inventory_item_availability(item_id: str, current_user: dict = Depends(get_current_user)):
+    """Get detailed availability for a specific inventory item (Phase 1)"""
+    item = await db.inventory_items.find_one({"id": item_id}, {"_id": 0})
+    if not item:
+        raise HTTPException(status_code=404, detail="Inventory item not found")
+    
+    # Get balance
+    balance = await db.inventory_balances.find_one({"item_id": item_id}, {"_id": 0})
+    on_hand = balance.get("on_hand", 0) if balance else 0
+    
+    # Get reservations
+    reservations = await db.inventory_reservations.find({"item_id": item_id}, {"_id": 0}).to_list(1000)
+    reserved = sum(r.get("qty", 0) for r in reservations)
+    
+    # Get inbound from open PO lines
+    po_lines = await db.purchase_order_lines.find({
+        "item_id": item_id,
+        "status": {"$in": ["OPEN", "PARTIAL"]}
+    }, {"_id": 0}).to_list(1000)
+    
+    inbound_details = []
+    total_inbound = 0
+    for line in po_lines:
+        remaining = line.get("qty", 0) - line.get("received_qty", 0)
+        if remaining > 0:
+            po = await db.purchase_orders.find_one({"id": line.get("po_id")}, {"_id": 0})
+            inbound_details.append({
+                "po_number": po.get("po_number") if po else "N/A",
+                "qty": remaining,
+                "promised_delivery_date": line.get("promised_delivery_date"),
+                "supplier_name": po.get("supplier_name") if po else "N/A"
+            })
+            total_inbound += remaining
+    
+    # Calculate availability
+    available = on_hand - reserved
+    
+    # Determine status
+    if available > 0:
+        status = "IN_STOCK"
+    elif total_inbound > 0:
+        status = "INBOUND"
+    else:
+        status = "OUT_OF_STOCK"
+    
+    return {
+        "item": item,
+        "on_hand": on_hand,
+        "reserved": reserved,
+        "available": available,
+        "inbound": total_inbound,
+        "inbound_details": inbound_details,
+        "status": status,
+        "reservations": reservations
+    }
 
 # Job Order Items Management
 @api_router.post("/job-order-items", response_model=JobOrderItem)
