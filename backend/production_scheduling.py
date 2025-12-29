@@ -158,7 +158,7 @@ class ProcurementRequisitionLineCreate(BaseModel):
     item_type: str  # RAW or PACK
     qty: float
     uom: str  # KG or EA
-    required_by: str  # ISO date
+    required_by: Optional[str] = None  # ISO date - optional
     linked_campaign_id: Optional[str] = None
     linked_schedule_day_id: Optional[str] = None
     reason: Optional[str] = None
