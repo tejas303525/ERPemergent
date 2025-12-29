@@ -435,7 +435,7 @@ class TestFinanceApproval:
         assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
         
         data = response.json()
-        assert isinstance(data, list)
+        assert isinstance(data, list), "Response should be a list"
         
         if len(data) > 0:
             po = data[0]
@@ -444,7 +444,7 @@ class TestFinanceApproval:
             assert "total_amount" in po
             print(f"✓ Found {len(data)} POs pending approval")
         else:
-            print("⚠ No POs pending approval")
+            print("⚠ No POs pending approval (empty list is valid)")
     
     def test_finance_approve_po(self, finance_client, test_po):
         """Test PUT /api/purchase-orders/:id/finance-approve approves PO"""
