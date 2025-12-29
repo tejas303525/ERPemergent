@@ -3747,13 +3747,28 @@ async def create_rfq(data: RFQCreate, current_user: dict = Depends(get_current_u
     return rfq.model_dump()
 
 @api_router.get("/rfq")
-async def get_rfqs(status: Optional[str] = None, current_user: dict = Depends(get_current_user)):
+async def get_rfqs(status: Optional[str] = None, rfq_type: Optional[str] = None, current_user: dict = Depends(get_current_user)):
     """Get all RFQs"""
     query = {}
     if status:
         query["status"] = status
+    if rfq_type:
+        query["rfq_type"] = rfq_type
     rfqs = await db.rfq.find(query, {"_id": 0}).sort("created_at", -1).to_list(1000)
     return rfqs
+
+# Companies endpoint for billing/shipping
+@api_router.get("/companies")
+async def get_companies(current_user: dict = Depends(get_current_user)):
+    """Get all companies for billing/shipping selection"""
+    companies = await db.companies.find({}, {"_id": 0}).to_list(100)
+    if not companies:
+        # Return default companies if none exist
+        return [
+            {"id": "1", "name": "Main Factory", "address": "123 Industrial Area, Manufacturing City"},
+            {"id": "2", "name": "Warehouse A", "address": "456 Storage Zone, Distribution City"}
+        ]
+    return companies
 
 @api_router.get("/rfq/{rfq_id}")
 async def get_rfq(rfq_id: str, current_user: dict = Depends(get_current_user)):
