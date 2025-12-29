@@ -25,6 +25,7 @@ import {
   FlaskConical,
   UserCog,
   DollarSign,
+  FileStack,
 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { cn } from '../../lib/utils';
@@ -37,6 +38,7 @@ const menuItems = [
   { icon: Calendar, label: 'Production Schedule', path: '/production-schedule', roles: ['admin', 'production', 'procurement'] },
   { icon: Package, label: 'Drum Schedule', path: '/drum-schedule', roles: ['admin', 'production', 'procurement'] },
   { icon: FlaskConical, label: 'Blend Reports', path: '/blend-reports', roles: ['admin', 'production', 'qc'] },
+  { icon: FileStack, label: 'BOM Management', path: '/bom-management', roles: ['admin', 'production', 'inventory'] },
   { icon: Boxes, label: 'Inventory', path: '/inventory', roles: ['admin', 'inventory', 'production', 'procurement'] },
   { icon: Receipt, label: 'GRN', path: '/grn', roles: ['admin', 'security', 'inventory', 'finance'] },
   { icon: ClipboardList, label: 'Delivery Orders', path: '/delivery-orders', roles: ['admin', 'security', 'shipping'] },
