@@ -4,22 +4,25 @@ import { Button } from '../components/ui/button';
 import { Calendar, Package, AlertTriangle, CheckCircle, Clock, TrendingUp, RefreshCw, Download } from 'lucide-react';
 import { toast } from 'sonner';
 
+// Get Monday of current week
+function getMonday(date) {
+  const d = new Date(date);
+  const day = d.getDay();
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+  return new Date(d.setDate(diff));
+}
+
 const DrumSchedulePage = () => {
-  const [weekStart, setWeekStart] = useState(getMonday(new Date()).toISOString().split('T')[0]);
+  const [weekStart, setWeekStart] = useState(() => {
+    const monday = getMonday(new Date());
+    return monday.toISOString().split('T')[0];
+  });
   const [schedule, setSchedule] = useState(null);
   const [arrivals, setArrivals] = useState(null);
   const [procurementReqs, setProcurementReqs] = useState([]);
   const [loading, setLoading] = useState(false);
   const [selectedCampaign, setSelectedCampaign] = useState(null);
   const [regenerating, setRegenerating] = useState(false);
-
-  // Get Monday of current week
-  function getMonday(date) {
-    const d = new Date(date);
-    const day = d.getDay();
-    const diff = d.getDate() - day + (day === 0 ? -6 : 1); // adjust when day is sunday
-    return new Date(d.setDate(diff));
-  }
 
   useEffect(() => {
     loadSchedule();
