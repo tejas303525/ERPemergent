@@ -2638,6 +2638,26 @@ async def get_purchase_orders(status: Optional[str] = None, current_user: dict =
     pos = await db.purchase_orders.find(query, {"_id": 0}).sort("created_at", -1).to_list(1000)
     return pos
 
+@api_router.get("/purchase-orders/pending-approval")
+async def get_pos_pending_approval(current_user: dict = Depends(get_current_user)):
+    """Get POs pending finance approval"""
+    pos = await db.purchase_orders.find(
+        {"status": "DRAFT"},
+        {"_id": 0}
+    ).sort("created_at", -1).to_list(1000)
+    
+    # Enrich with lines
+    enriched_pos = []
+    for po in pos:
+        lines = await db.purchase_order_lines.find({"po_id": po["id"]}, {"_id": 0}).to_list(1000)
+        for line in lines:
+            item = await db.inventory_items.find_one({"id": line.get("item_id")}, {"_id": 0})
+            line["item_name"] = item.get("name") if item else "Unknown"
+        po["lines"] = lines
+        enriched_pos.append(po)
+    
+    return enriched_pos
+
 @api_router.get("/purchase-orders/{po_id}")
 async def get_purchase_order(po_id: str, current_user: dict = Depends(get_current_user)):
     po = await db.purchase_orders.find_one({"id": po_id}, {"_id": 0})
@@ -3327,26 +3347,6 @@ async def convert_rfq_to_po(rfq_id: str, current_user: dict = Depends(get_curren
     return {"success": True, "message": f"PO {po_number} created from RFQ", "po_id": po.id, "po_number": po_number}
 
 # ==================== PHASE 6: FINANCE APPROVAL ====================
-
-@api_router.get("/purchase-orders/pending-approval")
-async def get_pos_pending_approval(current_user: dict = Depends(get_current_user)):
-    """Get POs pending finance approval"""
-    pos = await db.purchase_orders.find(
-        {"status": "DRAFT"},
-        {"_id": 0}
-    ).sort("created_at", -1).to_list(1000)
-    
-    # Enrich with lines
-    enriched_pos = []
-    for po in pos:
-        lines = await db.purchase_order_lines.find({"po_id": po["id"]}, {"_id": 0}).to_list(1000)
-        for line in lines:
-            item = await db.inventory_items.find_one({"id": line.get("item_id")}, {"_id": 0})
-            line["item_name"] = item.get("name") if item else "Unknown"
-        po["lines"] = lines
-        enriched_pos.append(po)
-    
-    return enriched_pos
 
 @api_router.put("/purchase-orders/{po_id}/finance-approve")
 async def finance_approve_po(po_id: str, current_user: dict = Depends(get_current_user)):
