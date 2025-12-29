@@ -3721,14 +3721,23 @@ async def create_rfq(data: RFQCreate, current_user: dict = Depends(get_current_u
             "item_name": item.get("name") if item else "Unknown",
             "item_sku": item.get("sku") if item else "N/A",
             "uom": item.get("uom") if item else "KG",
-            "unit_price": 0,  # To be filled by supplier
+            "unit_price": 0,
             "lead_time_days": None
         })
     
     rfq = RFQ(
         rfq_number=rfq_number,
+        rfq_type=data.rfq_type,
         supplier_id=data.supplier_id,
         supplier_name=supplier.get("name", "Unknown"),
+        supplier_address=supplier.get("address", ""),
+        billing_company=data.billing_company,
+        billing_address=data.billing_address,
+        shipping_company=data.shipping_company,
+        shipping_address=data.shipping_address,
+        delivery_date=data.delivery_date,
+        payment_terms=data.payment_terms,
+        incoterm=data.incoterm,
         lines=enriched_lines,
         notes=data.notes,
         created_by=current_user["id"]
