@@ -2628,6 +2628,10 @@ async def get_product_boms(product_id: str, current_user: dict = Depends(get_cur
         for item in bom_items:
             material = await db.inventory_items.find_one({"id": item['material_item_id']}, {"_id": 0})
             item['material'] = material
+            if material:
+                item['material_name'] = material.get('name', 'Unknown')
+                item['material_sku'] = material.get('sku', '-')
+                item['uom'] = material.get('uom', 'KG')
         
         bom['items'] = bom_items
     
