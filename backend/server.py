@@ -245,6 +245,12 @@ class GRN(GRNCreate):
     grn_number: str = ""
     received_by: str = ""
     received_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    # Phase 9: Payables review fields
+    review_status: str = "PENDING_PAYABLES"  # PENDING_PAYABLES, APPROVED, HOLD, REJECTED
+    reviewed_by: Optional[str] = None
+    reviewed_at: Optional[str] = None
+    review_notes: Optional[str] = None
+    po_id: Optional[str] = None  # Link to Purchase Order)
 
 # Delivery Order Model
 class DeliveryOrderCreate(BaseModel):
