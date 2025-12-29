@@ -15,100 +15,128 @@ Build a comprehensive ERP system for a production plant manufacturing unit with:
 ## User Personas (11 Roles)
 1. **Admin** - Full system access
 2. **Sales** - Quotations, customers, products
-3. **Finance** - Quotation approval, PO approval, payment tracking
+3. **Finance** - Quotation approval, PO approval, payment tracking, payables/receivables
 4. **Production** - Job orders, scheduling, BOM, drum schedule
 5. **Procurement** - Pending materials, supplier management, RFQ
 6. **Inventory** - Stock tracking, movements
-7. **Security** - GRN (goods receipt), Delivery Orders
+7. **Security** - GRN (goods receipt), Delivery Orders, gate checklists
 8. **QC** - Quality control, batch numbers, specifications
 9. **Shipping** - Container bookings, CRO management
 10. **Transport** - Container pickup scheduling
 11. **Documentation** - Export documents (invoices, packing lists, B/L)
 
-## What's Been Implemented
+---
 
-### Phase 1: Inventory Status Discrepancy Fix ✅ (Dec 29, 2025)
-- `GET /api/inventory-items` now returns items with `status` field
-- Status calculated as: IN_STOCK (available > 0), INBOUND (only incoming POs), OUT_OF_STOCK
-- `GET /api/inventory-items/:id/availability` returns detailed breakdown:
-  - on_hand, reserved, available, inbound, inbound_details, reservations
+## Implementation Status (All 9 Phases Complete)
 
-### Phase 3: SMTP Email Queue ✅ (Dec 29, 2025)
-- `POST /api/email/queue` - Queue emails for sending
-- `GET /api/email/outbox` - View email queue with SMTP status
-- `POST /api/email/process-queue` - Process queued emails (admin only)
-- Emails remain QUEUED when SMTP not configured (no mocking)
-- SMTP configuration via env: SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM
+### Phase 1: Inventory Status Discrepancy Fix ✅
+- `GET /api/inventory-items` returns items with calculated `status`
+- Status: IN_STOCK (available > 0), INBOUND (only incoming POs), OUT_OF_STOCK
+- `GET /api/inventory-items/:id/availability` for detailed breakdown
 
-### Phase 4: Auto Procurement from Shortages ✅ (Dec 29, 2025)
-- `POST /api/procurement/auto-generate` - Creates procurement requisition lines from schedule shortages
-- Automatically links to blocked schedule days
-- Creates PR with DRAFT status for procurement team review
+### Phase 2: Quantity & Packaging Rules ✅
+- Optional fields for UOM and weight supported in models
+- DRUM = COUNT, BULK = KG/MT/L
 
-### Phase 5: RFQ Flow ✅ (Dec 29, 2025)
-- `POST /api/rfq` - Create RFQ for supplier
-- `GET /api/rfq` - List all RFQs
-- `PUT /api/rfq/:id/send` - Mark as SENT, queue email to supplier
-- `PUT /api/rfq/:id/quote` - Update with supplier prices
-- `POST /api/rfq/:id/convert-to-po` - Convert QUOTED RFQ to PO
+### Phase 3: SMTP Email Queue ✅
+- `email_outbox` collection for queuing
+- Emails remain QUEUED when SMTP not configured
+- SMTP via env: SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS
 
-### Phase 6: Finance Approval ✅ (Dec 29, 2025)
-- `GET /api/purchase-orders/pending-approval` - POs awaiting finance approval
-- `PUT /api/purchase-orders/:id/finance-approve` - Finance approves PO
-- `PUT /api/purchase-orders/:id/finance-reject` - Finance rejects with reason
-- `PUT /api/purchase-orders/:id/send` - Send approved PO to supplier, queue email
+### Phase 4: Procurement Auto-Generation from BOMs ✅
+- `GET /api/procurement/shortages` - derives from product_boms + packaging_boms
+- `POST /api/procurement/auto-generate` - creates PR from shortages
+- **NEVER** reads from job_orders.bom
 
-### Phase 7: Drum Scheduling (600/day) ✅ (Dec 28-29, 2025)
-- Weekly production schedule with 7-day view
-- 600 drums/day capacity enforcement
-- Campaign-based scheduling (groups same product/packaging)
-- Material availability checking (RAW + PACK)
-- Automatic blocking for material shortages
-- Integration with product_boms and packaging_boms
+### Phase 5: RFQ → PO Flow ✅
+- Create, send, quote, convert workflow
+- Email queued on send
 
-### Frontend Pages Added (Dec 29, 2025)
-- `/procurement` - Procurement Management (RFQ, Requisitions)
-- `/finance-approval` - Finance PO Approval (pending, approved, email outbox)
+### Phase 6: Finance Approval ✅
+- PO approval/rejection workflow
+- Send to supplier queues email
+- Notification on pending approval
+
+### Phase 7: Drum Scheduling (600/day) ✅
+- Weekly view with capacity enforcement
+- Campaign grouping by product + packaging
+- Material availability from BOMs
+- BLOCKED status triggers procurement notification
+
+### Phase 8: Incoterm-Based Logistics Routing ✅
+- LOCAL: EXW, DDP, DAP → Transportation/Security inward
+- IMPORT: FOB, CFR, CIF, FCA → Shipping booking/Import checklist
+
+### Phase 9: Security, QC, Payables, Receivables ✅
+- GRN payables review gate (PENDING_PAYABLES → APPROVED/HOLD/REJECTED)
+- Payables: bills with aging buckets (Current, 30, 60, 90+ days)
+- Receivables: invoices (LOCAL/EXPORT) with aging
+- Security: inward checklists with weight in/out
+- QC: inspections with PASS/FAIL/HOLD
+
+### Notifications (Event-Based) ✅
+- Strict triggers only: RFQ_QUOTE_RECEIVED, PO_PENDING_APPROVAL, PRODUCTION_BLOCKED, GRN_PAYABLES_REVIEW
+- Bell icon in header with unread count
+- Role-filtered notifications
+
+---
 
 ## Technical Architecture
 
-### Backend (FastAPI + MongoDB)
-- `/app/backend/server.py` - Main API endpoints
-- `/app/backend/production_scheduling.py` - Drum scheduling models and logic
+### Backend (Python/FastAPI + MongoDB)
+- `/app/backend/server.py` - All API endpoints
+- `/app/backend/production_scheduling.py` - Drum scheduling models
 
 ### Frontend (React + Tailwind + Shadcn)
-- `/app/frontend/src/pages/` - All page components
+- `/app/frontend/src/pages/` - Page components
 - `/app/frontend/src/lib/api.js` - API client
-- `/app/frontend/src/components/ui/` - Shadcn components
+- `/app/frontend/src/components/layout/NotificationBell.js` - Bell component
 
 ### Key Collections
-- `users`, `customers`, `products`
-- `quotations`, `sales_orders`, `payments`
-- `job_orders`, `job_order_items`
+- `job_orders`, `sales_orders`, `quotations`, `products`
+- `product_boms`, `product_bom_items` (RAW materials - SOURCE OF TRUTH)
+- `packaging_boms`, `packaging_bom_items` (PACK materials - SOURCE OF TRUTH)
 - `inventory_items`, `inventory_balances`, `inventory_reservations`
-- `purchase_orders`, `purchase_order_lines`
-- `rfq`, `procurement_requisitions`, `procurement_requisition_lines`
-- `production_campaigns`, `production_schedule_days`
-- `email_outbox`
+- `purchase_orders`, `rfq`, `procurement_requisitions`
+- `grn`, `delivery_orders`, `shipping_bookings`
+- `email_outbox`, `notifications`
+- `payable_bills`, `receivable_invoices`
+- `security_checklists`, `qc_inspections`
+- `logistics_routing`, `import_checklists`
+
+---
+
+## Testing Status
+
+### Test Results (December 29, 2025)
+- **Backend**: 26/26 tests passed (100%)
+- **Frontend**: All pages load successfully
+- **Test Report**: `/app/test_reports/iteration_2.json`
+
+### Test Files
+- `/app/backend/tests/test_erp_backend.py` - Core tests
+- `/app/backend/tests/test_erp_phases_8_9.py` - Phase 8-9 tests
+
+---
 
 ## Prioritized Backlog
 
 ### P0 (Critical) - COMPLETED ✅
-- All core ERP workflows
-- Phases 1-7 of drum scheduling enhancement
+All 9 phases implemented and tested.
 
-### P1 (High Priority) - Next
-- **Phase 2**: Quantity & Packaging Rules (UOM, weight fields)
-- **Phase 8**: Incoterm-Based Logistics Routing
-- Blend report PDF generation improvements
+### P1 (High Priority) - Future Enhancements
 - Dashboard analytics charts
+- PDF export improvements for blend reports
+- Import checklist document upload
+- Multi-currency support
 
-### P2 (Medium Priority) - Future
-- **Phase 9**: Security, QC, Payables, Receivables modules
+### P2 (Medium Priority)
 - Customer portal for order tracking
 - Mobile-responsive enhancements
 - Audit trail improvements
 - Barcode scanner integration
+
+---
 
 ## Test Credentials
 - Admin: `admin@erp.com` / `admin123`
@@ -116,7 +144,16 @@ Build a comprehensive ERP system for a production plant manufacturing unit with:
 - Finance: `finance@erp.com` / `finance123`
 - Production: `production@erp.com` / `production123`
 
+---
+
+## Documentation
+- `/app/USER_MANUAL.md` - Complete user guide
+- `/app/CHANGELOG.md` - Version history
+
+---
+
 ## Notes
-- SMTP is intentionally NOT configured; emails remain QUEUED until SMTP env vars are set
-- All tests passing (15/15 backend, all frontend pages load correctly)
-- Test report: `/app/test_reports/iteration_1.json`
+- SMTP intentionally NOT configured; emails remain QUEUED
+- Material shortages derived from BOMs, never from job_orders.bom
+- 600 drums/day capacity is a hard limit
+- GRN must be approved by payables before AP posting
