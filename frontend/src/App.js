@@ -24,6 +24,8 @@ import ProductionSchedulePage from './pages/ProductionSchedulePage';
 import BlendReportsPage from './pages/BlendReportsPage';
 import UsersPage from './pages/UsersPage';
 import DrumSchedulePage from './pages/DrumSchedulePage';
+import ProcurementPage from './pages/ProcurementPage';
+import FinanceApprovalPage from './pages/FinanceApprovalPage';
 
 // Layout
 import MainLayout from './components/layout/MainLayout';
@@ -70,6 +72,8 @@ const AppRoutes = () => {
                 <Route path="/production-schedule" element={<ProductionSchedulePage />} />
                 <Route path="/drum-schedule" element={<DrumSchedulePage />} />
                 <Route path="/blend-reports" element={<BlendReportsPage />} />
+                <Route path="/procurement" element={<ProcurementPage />} />
+                <Route path="/finance-approval" element={<FinanceApprovalPage />} />
                 <Route path="/users" element={<UsersPage />} />
               </Routes>
             </MainLayout>
