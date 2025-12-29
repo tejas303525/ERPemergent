@@ -171,6 +171,7 @@ export const packagingAPI = {
 // Inventory Items (RAW + PACK)
 export const inventoryItemAPI = {
   getAll: (itemType) => api.get('/inventory-items', { params: { item_type: itemType } }),
+  getAvailability: (id) => api.get(`/inventory-items/${id}/availability`),
   create: (data) => api.post('/inventory-items', data),
 };
 
@@ -178,9 +179,13 @@ export const inventoryItemAPI = {
 export const purchaseOrderAPI = {
   getAll: (status) => api.get('/purchase-orders', { params: { status } }),
   getOne: (id) => api.get(`/purchase-orders/${id}`),
+  getPendingApproval: () => api.get('/purchase-orders/pending-approval'),
   create: (data) => api.post('/purchase-orders', data),
   createLine: (data) => api.post('/purchase-order-lines', data),
   updateStatus: (id, status) => api.put(`/purchase-orders/${id}/status`, null, { params: { status } }),
+  financeApprove: (id) => api.put(`/purchase-orders/${id}/finance-approve`),
+  financeReject: (id, reason) => api.put(`/purchase-orders/${id}/finance-reject`, null, { params: { reason } }),
+  send: (id) => api.put(`/purchase-orders/${id}/send`),
 };
 
 // Procurement Requisitions
@@ -206,26 +211,8 @@ export const emailAPI = {
   processQueue: () => api.post('/email/process-queue'),
 };
 
-// Inventory Items (RAW + PACK) - Extended
-export const inventoryItemAPI = {
-  getAll: (itemType) => api.get('/inventory-items', { params: { item_type: itemType } }),
-  getAvailability: (id) => api.get(`/inventory-items/${id}/availability`),
-  create: (data) => api.post('/inventory-items', data),
-};
-
-// Purchase Orders - Extended
-export const purchaseOrderAPI = {
-  getAll: (status) => api.get('/purchase-orders', { params: { status } }),
-  getOne: (id) => api.get(`/purchase-orders/${id}`),
-  getPendingApproval: () => api.get('/purchase-orders/pending-approval'),
-  create: (data) => api.post('/purchase-orders', data),
-  createLine: (data) => api.post('/purchase-order-lines', data),
-  updateStatus: (id, status) => api.put(`/purchase-orders/${id}/status`, null, { params: { status } }),
-  financeApprove: (id) => api.put(`/purchase-orders/${id}/finance-approve`),
-  financeReject: (id, reason) => api.put(`/purchase-orders/${id}/finance-reject`, null, { params: { reason } }),
-  send: (id) => api.put(`/purchase-orders/${id}/send`),
-};
-  getAll: (jobOrderId, status) => api.get('/blend-reports', { params: { job_order_id: jobOrderId, status } }),
+// Blend Reports
+export const blendReportAPI = {
   getOne: (id) => api.get(`/blend-reports/${id}`),
   create: (data) => api.post('/blend-reports', data),
   approve: (id) => api.put(`/blend-reports/${id}/approve`),
