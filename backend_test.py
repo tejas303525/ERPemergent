@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 from typing import Dict, Any, Optional
 
 # Configuration
-BASE_URL = "https://system-flow-reader.preview.emergentagent.com/api"
+BASE_URL = "https://manufactory-7.preview.emergentagent.com/api"
 TEST_EMAIL = "admin2@test.com"
 TEST_PASSWORD = "password123"
 
