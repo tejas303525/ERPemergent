@@ -179,6 +179,9 @@ export const MainLayout = ({ children }) => {
               {new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
             </span>
           </div>
+          <div className="flex items-center gap-2">
+            <NotificationBell />
+          </div>
         </header>
 
         {/* Page content */}
