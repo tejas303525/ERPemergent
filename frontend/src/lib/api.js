@@ -136,6 +136,9 @@ export const qcAPI = {
   getAll: (status) => api.get('/qc-batches', { params: { status } }),
   create: (data) => api.post('/qc-batches', data),
   updateStatus: (id, status) => api.put(`/qc-batches/${id}/status`, null, { params: { status } }),
+  createInspection: (data) => api.post('/qc/inspection', null, { params: data }),
+  updateResult: (id, status, notes) => api.put(`/qc/inspection/${id}/result`, null, { params: { status, notes } }),
+  getInspections: (status) => api.get('/qc/inspections', { params: { status } }),
 };
 
 // Inventory
@@ -264,13 +267,6 @@ export const securityAPI = {
   createInwardChecklist: (data) => api.post('/security/inward-checklist', null, { params: data }),
   completeChecklist: (id, weightOut) => api.put(`/security/checklist/${id}/complete`, null, { params: { weight_out: weightOut } }),
   getChecklists: (status) => api.get('/security/checklists', { params: { status } }),
-};
-
-// QC
-export const qcAPI = {
-  createInspection: (data) => api.post('/qc/inspection', null, { params: data }),
-  updateResult: (id, status, notes) => api.put(`/qc/inspection/${id}/result`, null, { params: { status, notes } }),
-  getInspections: (status) => api.get('/qc/inspections', { params: { status } }),
 };
 
 // Logistics Routing
