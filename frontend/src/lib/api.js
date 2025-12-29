@@ -226,13 +226,28 @@ export const pdfAPI = {
   getBlendReportUrl: (reportId) => `${API_BASE}/pdf/blend-report/${reportId}`,
 };
 
-// Notifications
+// Notifications (Event-Based Bell)
 export const notificationAPI = {
-  getAll: (unreadOnly) => api.get('/notifications', { params: { unread_only: unreadOnly } }),
-  getRecent: () => api.get('/notifications/recent'),
+  getBell: () => api.get('/notifications/bell'),
+  getUnreadCount: () => api.get('/notifications/unread-count'),
   markRead: (id) => api.put(`/notifications/${id}/read`),
   markAllRead: () => api.put('/notifications/read-all'),
-  create: (data) => api.post('/notifications', data),
+};
+
+// GRN (with Payables Review)
+export const grnAPI = {
+  getAll: () => api.get('/grn'),
+  create: (data) => api.post('/grn', data),
+  getPendingPayables: () => api.get('/grn/pending-payables'),
+  payablesApprove: (id, notes) => api.put(`/grn/${id}/payables-approve`, null, { params: { notes } }),
+  payablesHold: (id, reason) => api.put(`/grn/${id}/payables-hold`, null, { params: { reason } }),
+  payablesReject: (id, reason) => api.put(`/grn/${id}/payables-reject`, null, { params: { reason } }),
+};
+
+// Procurement Shortages (from BOMs)
+export const procurementShortagesAPI = {
+  getShortages: () => api.get('/procurement/shortages'),
+  autoGenerate: () => api.post('/procurement/auto-generate'),
 };
 
 // User Management
