@@ -30,6 +30,8 @@ import PayablesPage from './pages/PayablesPage';
 import ReceivablesPage from './pages/ReceivablesPage';
 import LogisticsPage from './pages/LogisticsPage';
 import BOMManagementPage from './pages/BOMManagementPage';
+import TransportWindowPage from './pages/TransportWindowPage';
+import ImportWindowPage from './pages/ImportWindowPage';
 
 // Layout
 import MainLayout from './components/layout/MainLayout';
