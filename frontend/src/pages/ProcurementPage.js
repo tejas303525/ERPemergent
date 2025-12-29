@@ -588,4 +588,63 @@ const RFQDetailModal = ({ rfq, onClose, onUpdated }) => {
   );
 };
 
+// Shortage Card Component (shows material shortage from BOMs)
+const ShortageCard = ({ shortage }) => {
+  return (
+    <div className="glass p-4 rounded-lg border border-red-500/30 bg-red-500/5" data-testid={`shortage-${shortage.item_id}`}>
+      <div className="flex items-start justify-between">
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <span className="font-bold">{shortage.item_name}</span>
+            <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+              shortage.item_type === 'RAW' ? 'bg-red-500/20 text-red-400' : 'bg-amber-500/20 text-amber-400'
+            }`}>
+              {shortage.item_type}
+            </span>
+          </div>
+          <p className="text-xs text-muted-foreground">SKU: {shortage.item_sku}</p>
+        </div>
+        <div className="text-right">
+          <p className="text-red-400 font-bold text-lg">
+            -{shortage.total_shortage?.toFixed(2)} {shortage.uom}
+          </p>
+          <p className="text-xs text-muted-foreground">shortage</p>
+        </div>
+      </div>
+      
+      <div className="grid grid-cols-3 gap-4 mt-4 p-2 rounded bg-muted/10 text-sm">
+        <div>
+          <p className="text-muted-foreground text-xs">On Hand</p>
+          <p className="font-medium">{shortage.on_hand?.toFixed(2)} {shortage.uom}</p>
+        </div>
+        <div>
+          <p className="text-muted-foreground text-xs">Reserved</p>
+          <p className="font-medium">{shortage.reserved?.toFixed(2)} {shortage.uom}</p>
+        </div>
+        <div>
+          <p className="text-muted-foreground text-xs">Required</p>
+          <p className="font-medium text-amber-400">{shortage.total_required?.toFixed(2)} {shortage.uom}</p>
+        </div>
+      </div>
+
+      {/* Jobs needing this material */}
+      {shortage.jobs && shortage.jobs.length > 0 && (
+        <div className="mt-3 pt-3 border-t border-border">
+          <p className="text-xs text-muted-foreground mb-1">Needed by jobs:</p>
+          <div className="flex flex-wrap gap-1">
+            {shortage.jobs.slice(0, 5).map((job, idx) => (
+              <span key={idx} className="px-2 py-0.5 rounded bg-muted/30 text-xs">
+                {job.job_number}
+              </span>
+            ))}
+            {shortage.jobs.length > 5 && (
+              <span className="px-2 py-0.5 rounded bg-muted/30 text-xs">+{shortage.jobs.length - 5} more</span>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 export default ProcurementPage;
