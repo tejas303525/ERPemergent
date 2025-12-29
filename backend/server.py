@@ -120,6 +120,7 @@ class QuotationItem(BaseModel):
     quantity: float
     unit_price: float
     packaging: str = "Bulk"
+    net_weight_kg: Optional[float] = None  # Net weight per unit for packaging
     total: float = 0
 
 class QuotationCreate(BaseModel):
@@ -2677,10 +2678,60 @@ async def get_packaging_boms(packaging_id: str, current_user: dict = Depends(get
         for item in bom_items:
             pack_item = await db.inventory_items.find_one({"id": item['pack_item_id']}, {"_id": 0})
             item['pack_item'] = pack_item
+            if pack_item:
+                item['pack_item_name'] = pack_item.get('name', 'Unknown')
+                item['pack_item_sku'] = pack_item.get('sku', '-')
         
         bom['items'] = bom_items
     
     return boms
+
+# BOM Activation Endpoints
+@api_router.put("/product-boms/{bom_id}/activate")
+async def activate_product_bom(bom_id: str, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] not in ["admin", "production"]:
+        raise HTTPException(status_code=403, detail="Only admin/production can activate BOMs")
+    
+    bom = await db.product_boms.find_one({"id": bom_id}, {"_id": 0})
+    if not bom:
+        raise HTTPException(status_code=404, detail="BOM not found")
+    
+    # Deactivate all other BOMs for this product
+    await db.product_boms.update_many(
+        {"product_id": bom["product_id"], "is_active": True},
+        {"$set": {"is_active": False}}
+    )
+    
+    # Activate this BOM
+    await db.product_boms.update_one(
+        {"id": bom_id},
+        {"$set": {"is_active": True}}
+    )
+    
+    return {"message": "BOM activated successfully"}
+
+@api_router.put("/packaging-boms/{bom_id}/activate")
+async def activate_packaging_bom(bom_id: str, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] not in ["admin", "inventory"]:
+        raise HTTPException(status_code=403, detail="Only admin/inventory can activate packaging BOMs")
+    
+    bom = await db.packaging_boms.find_one({"id": bom_id}, {"_id": 0})
+    if not bom:
+        raise HTTPException(status_code=404, detail="Packaging BOM not found")
+    
+    # Deactivate all other BOMs for this packaging
+    await db.packaging_boms.update_many(
+        {"packaging_id": bom["packaging_id"], "is_active": True},
+        {"$set": {"is_active": False}}
+    )
+    
+    # Activate this BOM
+    await db.packaging_boms.update_one(
+        {"id": bom_id},
+        {"$set": {"is_active": True}}
+    )
+    
+    return {"message": "Packaging BOM activated successfully"}
 
 # Suppliers Management
 @api_router.post("/suppliers", response_model=Supplier)
