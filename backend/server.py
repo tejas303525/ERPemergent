@@ -3984,6 +3984,422 @@ async def send_po_to_supplier(po_id: str, current_user: dict = Depends(get_curre
         "email_queued": bool(supplier and supplier.get("email"))
     }
 
+# ==================== PHASE 8: INCOTERM-BASED LOGISTICS ROUTING ====================
+
+INCOTERM_ROUTING = {
+    # LOCAL incoterms
+    "EXW": {"type": "LOCAL", "route": "TRANSPORTATION_INWARD", "description": "Ex Works - buyer arranges transport"},
+    "DDP": {"type": "LOCAL", "route": "SECURITY_QC_INWARD", "description": "Delivered Duty Paid - seller delivers to buyer"},
+    "DAP": {"type": "LOCAL", "route": "TRANSPORTATION_INWARD", "description": "Delivered at Place"},
+    # IMPORT incoterms
+    "FOB": {"type": "IMPORT", "route": "SHIPPING_BOOKING", "description": "Free On Board - import via sea"},
+    "CFR": {"type": "IMPORT", "route": "IMPORT_INWARD", "description": "Cost and Freight - import with freight"},
+    "CIF": {"type": "IMPORT", "route": "IMPORT_INWARD", "description": "Cost Insurance Freight - full import"},
+    "FCA": {"type": "IMPORT", "route": "SHIPPING_BOOKING", "description": "Free Carrier - import via air/land"},
+}
+
+@api_router.get("/logistics/routing-options")
+async def get_routing_options(current_user: dict = Depends(get_current_user)):
+    """Get available incoterm routing options"""
+    return {
+        "incoterms": INCOTERM_ROUTING,
+        "local_terms": ["EXW", "DDP", "DAP"],
+        "import_terms": ["FOB", "CFR", "CIF", "FCA"]
+    }
+
+@api_router.post("/logistics/route-po/{po_id}")
+async def route_po_logistics(po_id: str, incoterm: str, current_user: dict = Depends(get_current_user)):
+    """Route PO to appropriate logistics flow based on incoterm (Phase 8)"""
+    if current_user["role"] not in ["admin", "procurement", "finance"]:
+        raise HTTPException(status_code=403, detail="Only admin/procurement/finance can route POs")
+    
+    po = await db.purchase_orders.find_one({"id": po_id}, {"_id": 0})
+    if not po:
+        raise HTTPException(status_code=404, detail="PO not found")
+    
+    if incoterm not in INCOTERM_ROUTING:
+        raise HTTPException(status_code=400, detail=f"Invalid incoterm: {incoterm}")
+    
+    routing = INCOTERM_ROUTING[incoterm]
+    
+    # Create logistics routing record
+    routing_record = {
+        "id": str(uuid.uuid4()),
+        "po_id": po_id,
+        "po_number": po.get("po_number"),
+        "incoterm": incoterm,
+        "routing_type": routing["type"],
+        "route": routing["route"],
+        "status": "PENDING",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_by": current_user["id"]
+    }
+    
+    await db.logistics_routing.insert_one(routing_record)
+    
+    # Update PO with incoterm
+    await db.purchase_orders.update_one(
+        {"id": po_id},
+        {"$set": {
+            "incoterm": incoterm,
+            "logistics_routing_id": routing_record["id"]
+        }}
+    )
+    
+    # For IMPORT types, create import checklist
+    if routing["type"] == "IMPORT":
+        import_checklist = {
+            "id": str(uuid.uuid4()),
+            "po_id": po_id,
+            "routing_id": routing_record["id"],
+            "status": "PRE_IMPORT",
+            "pre_import_docs": [],
+            "post_import_docs": [],
+            "created_at": datetime.now(timezone.utc).isoformat()
+        }
+        await db.import_checklists.insert_one(import_checklist)
+        routing_record["import_checklist_id"] = import_checklist["id"]
+    
+    return {
+        "success": True,
+        "routing": routing_record,
+        "message": f"PO routed via {routing['route']} ({routing['description']})"
+    }
+
+@api_router.get("/logistics/routing")
+async def get_logistics_routing(status: Optional[str] = None, current_user: dict = Depends(get_current_user)):
+    """Get all logistics routing records"""
+    query = {}
+    if status:
+        query["status"] = status
+    
+    routings = await db.logistics_routing.find(query, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    return routings
+
+# ==================== PHASE 9: PAYABLES & RECEIVABLES (MVP) ====================
+
+# Payables Model
+class PayableBillCreate(BaseModel):
+    ref_type: str  # PO, TRANSPORT, SHIPPING
+    ref_id: str
+    supplier_id: str
+    amount: float
+    currency: str = "USD"
+    due_date: Optional[str] = None
+    notes: Optional[str] = None
+
+class PayableBill(PayableBillCreate):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    bill_number: str = ""
+    status: str = "PENDING"  # PENDING, APPROVED, PAID, CANCELLED
+    grn_id: Optional[str] = None
+    approved_by: Optional[str] = None
+    approved_at: Optional[str] = None
+    paid_at: Optional[str] = None
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+# Receivables Model
+class ReceivableInvoiceCreate(BaseModel):
+    invoice_type: str  # LOCAL, EXPORT
+    customer_id: str
+    sales_order_id: Optional[str] = None
+    job_order_id: Optional[str] = None
+    amount: float
+    currency: str = "USD"
+    due_date: Optional[str] = None
+    notes: Optional[str] = None
+
+class ReceivableInvoice(ReceivableInvoiceCreate):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    invoice_number: str = ""
+    status: str = "PENDING"  # PENDING, SENT, PARTIAL, PAID, OVERDUE
+    amount_paid: float = 0
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+# Payables Endpoints
+@api_router.post("/payables/bills")
+async def create_payable_bill(data: PayableBillCreate, current_user: dict = Depends(get_current_user)):
+    """Create a payable bill"""
+    if current_user["role"] not in ["admin", "finance"]:
+        raise HTTPException(status_code=403, detail="Only admin/finance can create bills")
+    
+    bill_number = await generate_sequence("BILL", "payable_bills")
+    bill = PayableBill(**data.model_dump(), bill_number=bill_number)
+    await db.payable_bills.insert_one(bill.model_dump())
+    
+    return bill.model_dump()
+
+@api_router.get("/payables/bills")
+async def get_payable_bills(status: Optional[str] = None, current_user: dict = Depends(get_current_user)):
+    """Get all payable bills with aging"""
+    query = {}
+    if status:
+        query["status"] = status
+    
+    bills = await db.payable_bills.find(query, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    
+    # Calculate aging buckets
+    today = datetime.now(timezone.utc)
+    aging = {"current": 0, "30_days": 0, "60_days": 0, "90_plus": 0}
+    
+    for bill in bills:
+        if bill.get("status") in ["PENDING", "APPROVED"]:
+            due_date = datetime.fromisoformat(bill.get("due_date", bill["created_at"]).replace("Z", "+00:00"))
+            days_overdue = (today - due_date).days
+            
+            if days_overdue <= 0:
+                aging["current"] += bill.get("amount", 0)
+            elif days_overdue <= 30:
+                aging["30_days"] += bill.get("amount", 0)
+            elif days_overdue <= 60:
+                aging["60_days"] += bill.get("amount", 0)
+            else:
+                aging["90_plus"] += bill.get("amount", 0)
+    
+    return {
+        "bills": bills,
+        "aging": aging,
+        "total_outstanding": sum(aging.values())
+    }
+
+@api_router.put("/payables/bills/{bill_id}/approve")
+async def approve_payable_bill(bill_id: str, current_user: dict = Depends(get_current_user)):
+    """Approve a payable bill for payment"""
+    if current_user["role"] not in ["admin", "finance"]:
+        raise HTTPException(status_code=403, detail="Only admin/finance can approve bills")
+    
+    await db.payable_bills.update_one(
+        {"id": bill_id},
+        {"$set": {
+            "status": "APPROVED",
+            "approved_by": current_user["id"],
+            "approved_at": datetime.now(timezone.utc).isoformat()
+        }}
+    )
+    return {"success": True, "message": "Bill approved for payment"}
+
+@api_router.put("/payables/bills/{bill_id}/pay")
+async def pay_payable_bill(bill_id: str, current_user: dict = Depends(get_current_user)):
+    """Mark a payable bill as paid"""
+    if current_user["role"] not in ["admin", "finance"]:
+        raise HTTPException(status_code=403, detail="Only admin/finance can mark bills as paid")
+    
+    await db.payable_bills.update_one(
+        {"id": bill_id},
+        {"$set": {
+            "status": "PAID",
+            "paid_at": datetime.now(timezone.utc).isoformat()
+        }}
+    )
+    return {"success": True, "message": "Bill marked as paid"}
+
+# Receivables Endpoints
+@api_router.post("/receivables/invoices")
+async def create_receivable_invoice(data: ReceivableInvoiceCreate, current_user: dict = Depends(get_current_user)):
+    """Create a receivable invoice"""
+    if current_user["role"] not in ["admin", "finance", "sales"]:
+        raise HTTPException(status_code=403, detail="Only admin/finance/sales can create invoices")
+    
+    prefix = "INV-L" if data.invoice_type == "LOCAL" else "INV-E"
+    invoice_number = await generate_sequence(prefix, "receivable_invoices")
+    
+    invoice = ReceivableInvoice(**data.model_dump(), invoice_number=invoice_number)
+    await db.receivable_invoices.insert_one(invoice.model_dump())
+    
+    return invoice.model_dump()
+
+@api_router.get("/receivables/invoices")
+async def get_receivable_invoices(status: Optional[str] = None, invoice_type: Optional[str] = None, current_user: dict = Depends(get_current_user)):
+    """Get all receivable invoices with aging"""
+    query = {}
+    if status:
+        query["status"] = status
+    if invoice_type:
+        query["invoice_type"] = invoice_type
+    
+    invoices = await db.receivable_invoices.find(query, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    
+    # Calculate aging buckets
+    today = datetime.now(timezone.utc)
+    aging = {"current": 0, "30_days": 0, "60_days": 0, "90_plus": 0}
+    
+    for inv in invoices:
+        if inv.get("status") in ["PENDING", "SENT", "PARTIAL"]:
+            outstanding = inv.get("amount", 0) - inv.get("amount_paid", 0)
+            due_date = datetime.fromisoformat(inv.get("due_date", inv["created_at"]).replace("Z", "+00:00"))
+            days_overdue = (today - due_date).days
+            
+            if days_overdue <= 0:
+                aging["current"] += outstanding
+            elif days_overdue <= 30:
+                aging["30_days"] += outstanding
+            elif days_overdue <= 60:
+                aging["60_days"] += outstanding
+            else:
+                aging["90_plus"] += outstanding
+    
+    return {
+        "invoices": invoices,
+        "aging": aging,
+        "total_outstanding": sum(aging.values())
+    }
+
+@api_router.put("/receivables/invoices/{invoice_id}/record-payment")
+async def record_payment(invoice_id: str, amount: float, current_user: dict = Depends(get_current_user)):
+    """Record a payment against an invoice"""
+    if current_user["role"] not in ["admin", "finance"]:
+        raise HTTPException(status_code=403, detail="Only admin/finance can record payments")
+    
+    invoice = await db.receivable_invoices.find_one({"id": invoice_id}, {"_id": 0})
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    
+    new_paid = invoice.get("amount_paid", 0) + amount
+    new_status = "PAID" if new_paid >= invoice.get("amount", 0) else "PARTIAL"
+    
+    await db.receivable_invoices.update_one(
+        {"id": invoice_id},
+        {"$set": {
+            "amount_paid": new_paid,
+            "status": new_status
+        }}
+    )
+    
+    # Record the payment
+    payment_record = {
+        "id": str(uuid.uuid4()),
+        "invoice_id": invoice_id,
+        "amount": amount,
+        "recorded_by": current_user["id"],
+        "recorded_at": datetime.now(timezone.utc).isoformat()
+    }
+    await db.payments_received.insert_one(payment_record)
+    
+    return {"success": True, "message": f"Payment of {amount} recorded", "new_status": new_status}
+
+# ==================== SECURITY & QC (MVP) ====================
+
+@api_router.post("/security/inward-checklist")
+async def create_inward_checklist(
+    grn_id: str,
+    vehicle_number: str,
+    driver_name: str,
+    weight_in: float,
+    notes: str = "",
+    current_user: dict = Depends(get_current_user)
+):
+    """Create security inward checklist"""
+    if current_user["role"] not in ["admin", "security"]:
+        raise HTTPException(status_code=403, detail="Only admin/security can create inward checklist")
+    
+    checklist = {
+        "id": str(uuid.uuid4()),
+        "grn_id": grn_id,
+        "type": "INWARD",
+        "vehicle_number": vehicle_number,
+        "driver_name": driver_name,
+        "weight_in": weight_in,
+        "weight_out": None,
+        "status": "IN_PROGRESS",
+        "notes": notes,
+        "created_by": current_user["id"],
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    await db.security_checklists.insert_one(checklist)
+    return checklist
+
+@api_router.put("/security/checklist/{checklist_id}/complete")
+async def complete_security_checklist(
+    checklist_id: str,
+    weight_out: float,
+    current_user: dict = Depends(get_current_user)
+):
+    """Complete security checklist with weight out"""
+    if current_user["role"] not in ["admin", "security"]:
+        raise HTTPException(status_code=403, detail="Only admin/security can complete checklist")
+    
+    await db.security_checklists.update_one(
+        {"id": checklist_id},
+        {"$set": {
+            "weight_out": weight_out,
+            "status": "COMPLETED",
+            "completed_at": datetime.now(timezone.utc).isoformat()
+        }}
+    )
+    return {"success": True, "message": "Security checklist completed"}
+
+@api_router.get("/security/checklists")
+async def get_security_checklists(status: Optional[str] = None, current_user: dict = Depends(get_current_user)):
+    """Get all security checklists"""
+    query = {}
+    if status:
+        query["status"] = status
+    
+    checklists = await db.security_checklists.find(query, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    return checklists
+
+# QC Endpoints
+@api_router.post("/qc/inspection")
+async def create_qc_inspection(
+    ref_type: str,  # GRN, JOB_ORDER, BLEND
+    ref_id: str,
+    batch_number: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """Create QC inspection record"""
+    if current_user["role"] not in ["admin", "qc"]:
+        raise HTTPException(status_code=403, detail="Only admin/qc can create inspections")
+    
+    inspection = {
+        "id": str(uuid.uuid4()),
+        "ref_type": ref_type,
+        "ref_id": ref_id,
+        "batch_number": batch_number,
+        "status": "PENDING",  # PENDING, PASS, FAIL, HOLD
+        "results": [],
+        "created_by": current_user["id"],
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    await db.qc_inspections.insert_one(inspection)
+    return inspection
+
+@api_router.put("/qc/inspection/{inspection_id}/result")
+async def update_qc_result(
+    inspection_id: str,
+    status: str,  # PASS, FAIL, HOLD
+    notes: str = "",
+    current_user: dict = Depends(get_current_user)
+):
+    """Update QC inspection result"""
+    if current_user["role"] not in ["admin", "qc"]:
+        raise HTTPException(status_code=403, detail="Only admin/qc can update inspections")
+    
+    if status not in ["PASS", "FAIL", "HOLD"]:
+        raise HTTPException(status_code=400, detail="Invalid status")
+    
+    await db.qc_inspections.update_one(
+        {"id": inspection_id},
+        {"$set": {
+            "status": status,
+            "result_notes": notes,
+            "inspected_by": current_user["id"],
+            "inspected_at": datetime.now(timezone.utc).isoformat()
+        }}
+    )
+    return {"success": True, "message": f"QC inspection marked as {status}"}
+
+@api_router.get("/qc/inspections")
+async def get_qc_inspections(status: Optional[str] = None, current_user: dict = Depends(get_current_user)):
+    """Get all QC inspections"""
+    query = {}
+    if status:
+        query["status"] = status
+    
+    inspections = await db.qc_inspections.find(query, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    return inspections
+
 app.include_router(api_router)
 
 app.add_middleware(
