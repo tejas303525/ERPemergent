@@ -424,9 +424,10 @@ export default function QuotationsPage() {
                             <th>Product</th>
                             <th>SKU</th>
                             <th>Qty</th>
-                            <th>Price</th>
                             <th>Packaging</th>
                             <th>Net Wt (kg)</th>
+                            <th>Weight (MT)</th>
+                            <th>Price/MT</th>
                             <th>Total</th>
                             <th></th>
                           </tr>
@@ -437,10 +438,11 @@ export default function QuotationsPage() {
                               <td>{item.product_name}</td>
                               <td>{item.sku}</td>
                               <td>{item.quantity}</td>
-                              <td>{formatCurrency(item.unit_price, form.currency)}</td>
                               <td>{item.packaging}</td>
                               <td>{item.net_weight_kg || '-'}</td>
-                              <td>{formatCurrency(item.quantity * item.unit_price, form.currency)}</td>
+                              <td className="font-mono">{item.weight_mt?.toFixed(3) || item.quantity}</td>
+                              <td>{formatCurrency(item.unit_price, form.currency)}</td>
+                              <td className="font-bold">{formatCurrency(item.total, form.currency)}</td>
                               <td>
                                 <Button variant="ghost" size="icon" onClick={() => removeItem(idx)}>
                                   <Trash2 className="w-4 h-4 text-destructive" />
@@ -450,11 +452,14 @@ export default function QuotationsPage() {
                           ))}
                         </tbody>
                       </table>
-                      <div className="p-4 border-t border-border flex justify-end">
+                      <div className="p-4 border-t border-border flex justify-between items-end">
+                        <div className="text-sm text-muted-foreground">
+                          Total Weight: <span className="font-mono font-medium">{form.items.reduce((sum, i) => sum + (i.weight_mt || i.quantity), 0).toFixed(3)} MT</span>
+                        </div>
                         <div className="text-right">
-                          <p className="text-sm text-muted-foreground">Total</p>
+                          <p className="text-sm text-muted-foreground">Grand Total</p>
                           <p className="text-xl font-bold font-mono">
-                            {formatCurrency(form.items.reduce((sum, i) => sum + i.quantity * i.unit_price, 0), form.currency)}
+                            {formatCurrency(form.items.reduce((sum, i) => sum + i.total, 0), form.currency)}
                           </p>
                         </div>
                       </div>
