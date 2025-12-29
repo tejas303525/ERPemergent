@@ -26,6 +26,9 @@ import UsersPage from './pages/UsersPage';
 import DrumSchedulePage from './pages/DrumSchedulePage';
 import ProcurementPage from './pages/ProcurementPage';
 import FinanceApprovalPage from './pages/FinanceApprovalPage';
+import PayablesPage from './pages/PayablesPage';
+import ReceivablesPage from './pages/ReceivablesPage';
+import LogisticsPage from './pages/LogisticsPage';
 
 // Layout
 import MainLayout from './components/layout/MainLayout';
