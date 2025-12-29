@@ -3364,62 +3364,178 @@ async def get_procurement_shortages(current_user: dict = Depends(get_current_use
     }
 
 @api_router.post("/procurement/auto-generate")
-async def auto_generate_procurement(week_start: str, current_user: dict = Depends(get_current_user)):
-    """Auto-generate procurement requisitions from schedule shortages (Phase 4)"""
+async def auto_generate_procurement(current_user: dict = Depends(get_current_user)):
+    """Auto-generate procurement requisitions from BOM-derived shortages (Phase 4)
+    
+    THIS READS FROM product_boms AND packaging_boms - NOT from job_orders.bom
+    """
     if current_user["role"] not in ["admin", "production", "procurement"]:
         raise HTTPException(status_code=403, detail="Only admin/production/procurement can auto-generate")
     
-    # Get blocked schedule days with shortages
-    blocked_days = await db.production_schedule_days.find({
-        "week_start": week_start,
-        "status": "BLOCKED"
-    }, {"_id": 0}).to_list(1000)
+    # Get ALL shortages from BOMs
+    # Get all pending job orders
+    pending_jobs = await db.job_orders.find(
+        {"status": {"$in": ["pending", "procurement", "in_production"]}},
+        {"_id": 0}
+    ).to_list(1000)
     
-    if not blocked_days:
-        return {"success": True, "message": "No blocked days found", "lines_created": 0}
+    shortages = {}  # {item_id: {details}}
     
-    # Find or create a draft PR
+    for job in pending_jobs:
+        product_id = job.get("product_id")
+        quantity = job.get("quantity", 0)
+        job_number = job.get("job_number", "Unknown")
+        delivery_date = job.get("delivery_date")
+        
+        # Get active product BOM
+        product_bom = await db.product_boms.find_one({
+            "product_id": product_id,
+            "is_active": True
+        }, {"_id": 0})
+        
+        if product_bom:
+            bom_items = await db.product_bom_items.find({
+                "bom_id": product_bom["id"]
+            }, {"_id": 0}).to_list(100)
+            
+            for bom_item in bom_items:
+                material_id = bom_item.get("material_item_id")
+                qty_per_kg = bom_item.get("qty_kg_per_kg_finished", 0)
+                
+                spec = await db.product_packaging_specs.find_one({"product_id": product_id}, {"_id": 0})
+                net_weight_kg = spec.get("net_weight_kg", 200) if spec else 200
+                
+                finished_kg = quantity * net_weight_kg
+                required_qty = finished_kg * qty_per_kg
+                
+                material = await db.inventory_items.find_one({"id": material_id}, {"_id": 0})
+                if not material:
+                    continue
+                
+                balance = await db.inventory_balances.find_one({"item_id": material_id}, {"_id": 0})
+                on_hand = balance.get("on_hand", 0) if balance else 0
+                
+                reservations = await db.inventory_reservations.find({"item_id": material_id}, {"_id": 0}).to_list(1000)
+                reserved = sum(r.get("qty", 0) for r in reservations)
+                
+                available = on_hand - reserved
+                shortage = max(0, required_qty - available)
+                
+                if shortage > 0:
+                    if material_id not in shortages:
+                        shortages[material_id] = {
+                            "item_id": material_id,
+                            "item_name": material.get("name", "Unknown"),
+                            "item_type": "RAW",
+                            "uom": material.get("uom", "KG"),
+                            "total_shortage": 0,
+                            "required_by": delivery_date,
+                            "jobs": []
+                        }
+                    shortages[material_id]["total_shortage"] += shortage
+                    shortages[material_id]["jobs"].append(job_number)
+        
+        # Packaging BOM
+        packaging = await db.packaging.find_one({"name": {"$regex": "DRUM", "$options": "i"}}, {"_id": 0})
+        if packaging:
+            packaging_bom = await db.packaging_boms.find_one({
+                "packaging_id": packaging["id"],
+                "is_active": True
+            }, {"_id": 0})
+            
+            if packaging_bom:
+                pack_items = await db.packaging_bom_items.find({
+                    "packaging_bom_id": packaging_bom["id"]
+                }, {"_id": 0}).to_list(100)
+                
+                for pack_item in pack_items:
+                    pack_id = pack_item.get("pack_item_id")
+                    qty_per_drum = pack_item.get("qty_per_drum", 1)
+                    required_qty = quantity * qty_per_drum
+                    
+                    pack_material = await db.inventory_items.find_one({"id": pack_id}, {"_id": 0})
+                    if not pack_material:
+                        continue
+                    
+                    balance = await db.inventory_balances.find_one({"item_id": pack_id}, {"_id": 0})
+                    on_hand = balance.get("on_hand", 0) if balance else 0
+                    
+                    reservations = await db.inventory_reservations.find({"item_id": pack_id}, {"_id": 0}).to_list(1000)
+                    reserved = sum(r.get("qty", 0) for r in reservations)
+                    
+                    available = on_hand - reserved
+                    shortage = max(0, required_qty - available)
+                    
+                    if shortage > 0:
+                        if pack_id not in shortages:
+                            shortages[pack_id] = {
+                                "item_id": pack_id,
+                                "item_name": pack_material.get("name", "Unknown"),
+                                "item_type": "PACK",
+                                "uom": pack_material.get("uom", "EA"),
+                                "total_shortage": 0,
+                                "required_by": delivery_date,
+                                "jobs": []
+                            }
+                        shortages[pack_id]["total_shortage"] += shortage
+                        shortages[pack_id]["jobs"].append(job_number)
+    
+    if not shortages:
+        return {"success": True, "message": "No shortages found from BOMs", "lines_created": 0}
+    
+    # Find or create draft PR
     existing_pr = await db.procurement_requisitions.find_one({"status": "DRAFT"}, {"_id": 0})
     if not existing_pr:
-        pr = ProcurementRequisition(notes=f"Auto-generated for week {week_start}")
+        pr = ProcurementRequisition(notes=f"Auto-generated from BOM shortages on {datetime.now(timezone.utc).strftime('%Y-%m-%d')}")
         await db.procurement_requisitions.insert_one(pr.model_dump())
         existing_pr = pr.model_dump()
     
     lines_created = 0
     
-    for day in blocked_days:
-        shortages = day.get("blocking_details", {}).get("shortages", [])
+    for item_id, shortage_data in shortages.items():
+        # Check if line already exists
+        existing_line = await db.procurement_requisition_lines.find_one({
+            "pr_id": existing_pr["id"],
+            "item_id": item_id
+        })
         
-        for shortage in shortages:
-            # Check if line already exists
-            existing_line = await db.procurement_requisition_lines.find_one({
-                "pr_id": existing_pr["id"],
-                "item_id": shortage.get("item_id"),
-                "linked_schedule_day_id": day.get("id")
-            })
-            
-            if not existing_line:
-                item = await db.inventory_items.find_one({"id": shortage.get("item_id")}, {"_id": 0})
-                
-                pr_line = ProcurementRequisitionLine(
-                    pr_id=existing_pr["id"],
-                    item_id=shortage.get("item_id"),
-                    item_type=shortage.get("item_type", "RAW"),
-                    qty=shortage.get("shortage", 0),
-                    uom=item.get("uom", "KG") if item else "KG",
-                    required_by=day.get("schedule_date"),
-                    linked_campaign_id=day.get("campaign_id"),
-                    linked_schedule_day_id=day.get("id"),
-                    reason=f"Shortage for {day.get('schedule_date')}: {shortage.get('item_name', 'Unknown')}"
+        if existing_line:
+            # Update qty if larger
+            if shortage_data["total_shortage"] > existing_line.get("qty", 0):
+                await db.procurement_requisition_lines.update_one(
+                    {"id": existing_line["id"]},
+                    {"$set": {"qty": shortage_data["total_shortage"]}}
                 )
-                await db.procurement_requisition_lines.insert_one(pr_line.model_dump())
-                lines_created += 1
+        else:
+            pr_line = ProcurementRequisitionLine(
+                pr_id=existing_pr["id"],
+                item_id=item_id,
+                item_type=shortage_data["item_type"],
+                qty=shortage_data["total_shortage"],
+                uom=shortage_data["uom"],
+                required_by=shortage_data.get("required_by"),
+                reason=f"Shortage for jobs: {', '.join(shortage_data['jobs'][:3])}"
+            )
+            await db.procurement_requisition_lines.insert_one(pr_line.model_dump())
+            lines_created += 1
+    
+    # Create notification for blocked production
+    if lines_created > 0:
+        await create_notification(
+            event_type="PRODUCTION_BLOCKED",
+            title="Material Shortages Detected",
+            message=f"{lines_created} items need procurement. View requisition for details.",
+            link="/procurement",
+            target_roles=["admin", "procurement"],
+            notification_type="warning"
+        )
     
     return {
         "success": True,
-        "message": f"Created {lines_created} procurement requisition lines",
+        "message": f"Created {lines_created} procurement requisition lines from BOM shortages",
         "pr_id": existing_pr["id"],
-        "lines_created": lines_created
+        "lines_created": lines_created,
+        "shortages": list(shortages.values())
     }
 
 # ==================== PHASE 5: RFQ FLOW ====================
