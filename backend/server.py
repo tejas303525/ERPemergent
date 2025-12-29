@@ -843,12 +843,93 @@ async def create_grn(data: GRNCreate, current_user: dict = Depends(get_current_u
             )
             await db.inventory_movements.insert_one(movement.model_dump())
     
+    # Phase 9: Create notification for GRN pending payables review
+    await create_notification(
+        event_type="GRN_PAYABLES_REVIEW",
+        title=f"GRN Pending Review: {grn_number}",
+        message=f"New GRN from {data.supplier} with {len(data.items)} items requires payables review",
+        link="/grn",
+        ref_type="GRN",
+        ref_id=grn.id,
+        target_roles=["admin", "finance"],
+        notification_type="warning"
+    )
+    
     return grn
 
 @api_router.get("/grn", response_model=List[GRN])
 async def get_grns(current_user: dict = Depends(get_current_user)):
     grns = await db.grn.find({}, {"_id": 0}).sort("received_at", -1).to_list(1000)
     return grns
+
+# ==================== PHASE 9: GRN PAYABLES REVIEW ====================
+
+@api_router.get("/grn/pending-payables")
+async def get_grns_pending_payables(current_user: dict = Depends(get_current_user)):
+    """Get GRNs pending payables review"""
+    grns = await db.grn.find(
+        {"review_status": {"$in": ["PENDING_PAYABLES", None]}},
+        {"_id": 0}
+    ).sort("received_at", -1).to_list(1000)
+    return grns
+
+@api_router.put("/grn/{grn_id}/payables-approve")
+async def payables_approve_grn(grn_id: str, notes: str = "", current_user: dict = Depends(get_current_user)):
+    """Payables approves a GRN for AP posting"""
+    if current_user["role"] not in ["admin", "finance"]:
+        raise HTTPException(status_code=403, detail="Only admin/finance can approve GRN for payables")
+    
+    grn = await db.grn.find_one({"id": grn_id}, {"_id": 0})
+    if not grn:
+        raise HTTPException(status_code=404, detail="GRN not found")
+    
+    await db.grn.update_one(
+        {"id": grn_id},
+        {"$set": {
+            "review_status": "APPROVED",
+            "reviewed_by": current_user["id"],
+            "reviewed_at": datetime.now(timezone.utc).isoformat(),
+            "review_notes": notes
+        }}
+    )
+    
+    return {"success": True, "message": "GRN approved for payables"}
+
+@api_router.put("/grn/{grn_id}/payables-hold")
+async def payables_hold_grn(grn_id: str, reason: str = "", current_user: dict = Depends(get_current_user)):
+    """Payables puts a GRN on hold"""
+    if current_user["role"] not in ["admin", "finance"]:
+        raise HTTPException(status_code=403, detail="Only admin/finance can hold GRN")
+    
+    await db.grn.update_one(
+        {"id": grn_id},
+        {"$set": {
+            "review_status": "HOLD",
+            "reviewed_by": current_user["id"],
+            "reviewed_at": datetime.now(timezone.utc).isoformat(),
+            "review_notes": reason
+        }}
+    )
+    
+    return {"success": True, "message": "GRN put on hold"}
+
+@api_router.put("/grn/{grn_id}/payables-reject")
+async def payables_reject_grn(grn_id: str, reason: str = "", current_user: dict = Depends(get_current_user)):
+    """Payables rejects a GRN"""
+    if current_user["role"] not in ["admin", "finance"]:
+        raise HTTPException(status_code=403, detail="Only admin/finance can reject GRN")
+    
+    await db.grn.update_one(
+        {"id": grn_id},
+        {"$set": {
+            "review_status": "REJECTED",
+            "reviewed_by": current_user["id"],
+            "reviewed_at": datetime.now(timezone.utc).isoformat(),
+            "review_notes": reason
+        }}
+    )
+    
+    return {"success": True, "message": "GRN rejected by payables"}
 
 # ==================== DELIVERY ORDER ROUTES ====================
 
