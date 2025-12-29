@@ -570,12 +570,28 @@ async def update_product(product_id: str, data: ProductCreate, current_user: dic
 async def create_quotation(data: QuotationCreate, current_user: dict = Depends(get_current_user)):
     pfi_number = await generate_sequence("PFI", "quotations")
     
-    subtotal = sum(item.quantity * item.unit_price for item in data.items)
     items_with_total = []
+    subtotal = 0
+    
     for item in data.items:
         item_dict = item.model_dump()
-        item_dict["total"] = item.quantity * item.unit_price
+        
+        # Calculate total based on packaging type
+        # For packaged items: (net_weight_kg * qty) / 1000 = MT, then MT * unit_price
+        # For Bulk: qty (assumed MT) * unit_price
+        if item.packaging != "Bulk" and item.net_weight_kg:
+            weight_mt = (item.net_weight_kg * item.quantity) / 1000
+            item_total = weight_mt * item.unit_price
+            item_dict["weight_mt"] = weight_mt
+        else:
+            # Bulk: quantity is in MT
+            weight_mt = item.quantity
+            item_total = item.quantity * item.unit_price
+            item_dict["weight_mt"] = weight_mt
+        
+        item_dict["total"] = item_total
         items_with_total.append(item_dict)
+        subtotal += item_total
     
     quotation = Quotation(
         **data.model_dump(exclude={"items"}),
