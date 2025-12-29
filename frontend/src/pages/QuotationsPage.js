@@ -109,9 +109,24 @@ export default function QuotationsPage() {
       toast.error('Please enter net weight (kg) for packaged items');
       return;
     }
+    
+    // Calculate total based on packaging type
+    // For packaged items: (net_weight_kg * qty) / 1000 = MT, then MT * unit_price
+    // For Bulk: qty (assumed MT) * unit_price
+    let total = 0;
+    let weight_mt = 0;
+    if (newItem.packaging !== 'Bulk' && newItem.net_weight_kg) {
+      weight_mt = (newItem.net_weight_kg * newItem.quantity) / 1000;
+      total = weight_mt * newItem.unit_price;
+    } else {
+      // Bulk: quantity is in MT
+      weight_mt = newItem.quantity;
+      total = newItem.quantity * newItem.unit_price;
+    }
+    
     setForm({
       ...form,
-      items: [...form.items, { ...newItem, total: newItem.quantity * newItem.unit_price }],
+      items: [...form.items, { ...newItem, weight_mt, total }],
     });
     setNewItem({ product_id: '', product_name: '', sku: '', quantity: 0, unit_price: 0, packaging: 'Bulk', net_weight_kg: null });
   };
