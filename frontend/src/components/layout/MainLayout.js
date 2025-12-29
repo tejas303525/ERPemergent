@@ -26,6 +26,8 @@ import {
   UserCog,
   DollarSign,
   FileStack,
+  Container,
+  Globe,
 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { cn } from '../../lib/utils';
@@ -36,15 +38,14 @@ const menuItems = [
   { icon: ShoppingCart, label: 'Sales Orders', path: '/sales-orders', roles: ['admin', 'sales', 'finance'] },
   { icon: Factory, label: 'Job Orders', path: '/job-orders', roles: ['admin', 'production', 'procurement'] },
   { icon: Calendar, label: 'Production Schedule', path: '/production-schedule', roles: ['admin', 'production', 'procurement'] },
-  { icon: Package, label: 'Drum Schedule', path: '/drum-schedule', roles: ['admin', 'production', 'procurement'] },
   { icon: FlaskConical, label: 'Blend Reports', path: '/blend-reports', roles: ['admin', 'production', 'qc'] },
   { icon: FileStack, label: 'BOM Management', path: '/bom-management', roles: ['admin', 'production', 'inventory'] },
   { icon: Boxes, label: 'Inventory', path: '/inventory', roles: ['admin', 'inventory', 'production', 'procurement'] },
   { icon: Receipt, label: 'GRN', path: '/grn', roles: ['admin', 'security', 'inventory', 'finance'] },
   { icon: ClipboardList, label: 'Delivery Orders', path: '/delivery-orders', roles: ['admin', 'security', 'shipping'] },
   { icon: Ship, label: 'Shipping', path: '/shipping', roles: ['admin', 'shipping'] },
-  { icon: Truck, label: 'Transport', path: '/transport', roles: ['admin', 'transport'] },
-  { icon: Truck, label: 'Inward Logistics', path: '/logistics', roles: ['admin', 'procurement', 'finance'] },
+  { icon: Truck, label: 'Transport Window', path: '/transport-window', roles: ['admin', 'transport', 'procurement'] },
+  { icon: Globe, label: 'Import Window', path: '/import-window', roles: ['admin', 'procurement', 'finance'] },
   { icon: DoorOpen, label: 'Dispatch Gate', path: '/dispatch-gate', roles: ['admin', 'security', 'shipping', 'transport'] },
   { icon: FileCheck, label: 'Documentation', path: '/documentation', roles: ['admin', 'documentation'] },
   { icon: ClipboardCheck, label: 'Quality Control', path: '/qc', roles: ['admin', 'qc'] },
