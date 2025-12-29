@@ -11,8 +11,16 @@ Phase 1 Testing: Production Scheduling Focus
 import pytest
 import requests
 import os
+import sys
 
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL').rstrip('/')
+# Add parent directory to path to import from frontend .env
+sys.path.insert(0, '/app/frontend')
+
+# Load environment variables
+from dotenv import load_dotenv
+load_dotenv('/app/frontend/.env')
+
+BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://smart-factory-29.preview.emergentagent.com').rstrip('/')
 
 class TestPhase1Features:
     """Test Phase 1 Production Scheduling Features"""
