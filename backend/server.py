@@ -2942,6 +2942,517 @@ async def approve_schedule(week_start: str, current_user: dict = Depends(get_cur
         "reservations_created": reservations_created
     }
 
+# ==================== PHASE 3: SMTP EMAIL QUEUE ====================
+
+class EmailQueueCreate(BaseModel):
+    to_email: str
+    subject: str
+    body_html: str
+    body_text: Optional[str] = None
+    ref_type: Optional[str] = None  # PO, QUOTATION, etc.
+    ref_id: Optional[str] = None
+
+class EmailQueueItem(EmailQueueCreate):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    status: str = "QUEUED"  # QUEUED, SENT, FAILED
+    attempts: int = 0
+    last_error: Optional[str] = None
+    sent_at: Optional[str] = None
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+@api_router.post("/email/queue")
+async def queue_email(data: EmailQueueCreate, current_user: dict = Depends(get_current_user)):
+    """Queue an email for sending via SMTP"""
+    email_item = EmailQueueItem(**data.model_dump())
+    await db.email_outbox.insert_one(email_item.model_dump())
+    return {"success": True, "email_id": email_item.id, "status": "QUEUED"}
+
+@api_router.get("/email/outbox")
+async def get_email_outbox(status: Optional[str] = None, current_user: dict = Depends(get_current_user)):
+    """Get email queue with SMTP configuration status"""
+    query = {}
+    if status:
+        query["status"] = status
+    emails = await db.email_outbox.find(query, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    
+    # Check if SMTP is configured
+    smtp_host = os.environ.get('SMTP_HOST')
+    smtp_configured = smtp_host is not None and smtp_host != ''
+    
+    return {
+        "smtp_configured": smtp_configured,
+        "smtp_status": "CONFIGURED" if smtp_configured else "NOT_CONFIGURED",
+        "emails": emails
+    }
+
+@api_router.post("/email/process-queue")
+async def process_email_queue(current_user: dict = Depends(get_current_user)):
+    """Process queued emails using SMTP (if configured)"""
+    if current_user["role"] not in ["admin"]:
+        raise HTTPException(status_code=403, detail="Only admin can process email queue")
+    
+    # Check SMTP configuration
+    smtp_host = os.environ.get('SMTP_HOST')
+    smtp_port = int(os.environ.get('SMTP_PORT', 587))
+    smtp_user = os.environ.get('SMTP_USER')
+    smtp_pass = os.environ.get('SMTP_PASS')
+    smtp_from = os.environ.get('SMTP_FROM', smtp_user)
+    
+    if not smtp_host:
+        return {
+            "success": False,
+            "message": "SMTP not configured. Emails remain QUEUED.",
+            "processed": 0
+        }
+    
+    # Get queued emails
+    queued_emails = await db.email_outbox.find(
+        {"status": "QUEUED"},
+        {"_id": 0}
+    ).limit(50).to_list(50)
+    
+    processed = 0
+    failed = 0
+    
+    import smtplib
+    from email.mime.text import MIMEText
+    from email.mime.multipart import MIMEMultipart
+    
+    for email in queued_emails:
+        try:
+            msg = MIMEMultipart('alternative')
+            msg['Subject'] = email['subject']
+            msg['From'] = smtp_from
+            msg['To'] = email['to_email']
+            
+            if email.get('body_text'):
+                msg.attach(MIMEText(email['body_text'], 'plain'))
+            msg.attach(MIMEText(email['body_html'], 'html'))
+            
+            with smtplib.SMTP(smtp_host, smtp_port) as server:
+                server.starttls()
+                if smtp_user and smtp_pass:
+                    server.login(smtp_user, smtp_pass)
+                server.sendmail(smtp_from, email['to_email'], msg.as_string())
+            
+            await db.email_outbox.update_one(
+                {"id": email['id']},
+                {"$set": {
+                    "status": "SENT",
+                    "sent_at": datetime.now(timezone.utc).isoformat(),
+                    "attempts": email.get('attempts', 0) + 1
+                }}
+            )
+            processed += 1
+        except Exception as e:
+            await db.email_outbox.update_one(
+                {"id": email['id']},
+                {"$set": {
+                    "status": "FAILED" if email.get('attempts', 0) >= 2 else "QUEUED",
+                    "last_error": str(e),
+                    "attempts": email.get('attempts', 0) + 1
+                }}
+            )
+            failed += 1
+    
+    return {
+        "success": True,
+        "processed": processed,
+        "failed": failed,
+        "message": f"Processed {processed} emails, {failed} failed"
+    }
+
+# ==================== PHASE 4: AUTO PROCUREMENT FROM SHORTAGES ====================
+
+@api_router.post("/procurement/auto-generate")
+async def auto_generate_procurement(week_start: str, current_user: dict = Depends(get_current_user)):
+    """Auto-generate procurement requisitions from schedule shortages (Phase 4)"""
+    if current_user["role"] not in ["admin", "production", "procurement"]:
+        raise HTTPException(status_code=403, detail="Only admin/production/procurement can auto-generate")
+    
+    # Get blocked schedule days with shortages
+    blocked_days = await db.production_schedule_days.find({
+        "week_start": week_start,
+        "status": "BLOCKED"
+    }, {"_id": 0}).to_list(1000)
+    
+    if not blocked_days:
+        return {"success": True, "message": "No blocked days found", "lines_created": 0}
+    
+    # Find or create a draft PR
+    existing_pr = await db.procurement_requisitions.find_one({"status": "DRAFT"}, {"_id": 0})
+    if not existing_pr:
+        pr = ProcurementRequisition(notes=f"Auto-generated for week {week_start}")
+        await db.procurement_requisitions.insert_one(pr.model_dump())
+        existing_pr = pr.model_dump()
+    
+    lines_created = 0
+    
+    for day in blocked_days:
+        shortages = day.get("blocking_details", {}).get("shortages", [])
+        
+        for shortage in shortages:
+            # Check if line already exists
+            existing_line = await db.procurement_requisition_lines.find_one({
+                "pr_id": existing_pr["id"],
+                "item_id": shortage.get("item_id"),
+                "linked_schedule_day_id": day.get("id")
+            })
+            
+            if not existing_line:
+                item = await db.inventory_items.find_one({"id": shortage.get("item_id")}, {"_id": 0})
+                
+                pr_line = ProcurementRequisitionLine(
+                    pr_id=existing_pr["id"],
+                    item_id=shortage.get("item_id"),
+                    item_type=shortage.get("item_type", "RAW"),
+                    qty=shortage.get("shortage", 0),
+                    uom=item.get("uom", "KG") if item else "KG",
+                    required_by=day.get("schedule_date"),
+                    linked_campaign_id=day.get("campaign_id"),
+                    linked_schedule_day_id=day.get("id"),
+                    reason=f"Shortage for {day.get('schedule_date')}: {shortage.get('item_name', 'Unknown')}"
+                )
+                await db.procurement_requisition_lines.insert_one(pr_line.model_dump())
+                lines_created += 1
+    
+    return {
+        "success": True,
+        "message": f"Created {lines_created} procurement requisition lines",
+        "pr_id": existing_pr["id"],
+        "lines_created": lines_created
+    }
+
+# ==================== PHASE 5: RFQ FLOW ====================
+
+class RFQCreate(BaseModel):
+    supplier_id: str
+    lines: List[Dict[str, Any]]  # [{item_id, qty, required_by}]
+    notes: Optional[str] = None
+
+class RFQ(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    rfq_number: str = ""
+    supplier_id: str
+    supplier_name: str = ""
+    status: str = "DRAFT"  # DRAFT, SENT, QUOTED, CANCELLED
+    lines: List[Dict[str, Any]] = []
+    total_amount: float = 0
+    currency: str = "USD"
+    notes: Optional[str] = None
+    quoted_at: Optional[str] = None
+    created_by: str = ""
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+class RFQLineQuote(BaseModel):
+    item_id: str
+    unit_price: float
+    lead_time_days: Optional[int] = None
+
+class RFQQuoteUpdate(BaseModel):
+    lines: List[RFQLineQuote]
+    notes: Optional[str] = None
+
+@api_router.post("/rfq")
+async def create_rfq(data: RFQCreate, current_user: dict = Depends(get_current_user)):
+    """Create a new RFQ (Request for Quotation)"""
+    if current_user["role"] not in ["admin", "procurement"]:
+        raise HTTPException(status_code=403, detail="Only admin/procurement can create RFQs")
+    
+    supplier = await db.suppliers.find_one({"id": data.supplier_id}, {"_id": 0})
+    if not supplier:
+        raise HTTPException(status_code=404, detail="Supplier not found")
+    
+    rfq_number = await generate_sequence("RFQ", "rfq")
+    
+    # Enrich lines with item details
+    enriched_lines = []
+    for line in data.lines:
+        item = await db.inventory_items.find_one({"id": line.get("item_id")}, {"_id": 0})
+        enriched_lines.append({
+            **line,
+            "item_name": item.get("name") if item else "Unknown",
+            "item_sku": item.get("sku") if item else "N/A",
+            "uom": item.get("uom") if item else "KG",
+            "unit_price": 0,  # To be filled by supplier
+            "lead_time_days": None
+        })
+    
+    rfq = RFQ(
+        rfq_number=rfq_number,
+        supplier_id=data.supplier_id,
+        supplier_name=supplier.get("name", "Unknown"),
+        lines=enriched_lines,
+        notes=data.notes,
+        created_by=current_user["id"]
+    )
+    
+    await db.rfq.insert_one(rfq.model_dump())
+    return rfq.model_dump()
+
+@api_router.get("/rfq")
+async def get_rfqs(status: Optional[str] = None, current_user: dict = Depends(get_current_user)):
+    """Get all RFQs"""
+    query = {}
+    if status:
+        query["status"] = status
+    rfqs = await db.rfq.find(query, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    return rfqs
+
+@api_router.get("/rfq/{rfq_id}")
+async def get_rfq(rfq_id: str, current_user: dict = Depends(get_current_user)):
+    """Get RFQ details"""
+    rfq = await db.rfq.find_one({"id": rfq_id}, {"_id": 0})
+    if not rfq:
+        raise HTTPException(status_code=404, detail="RFQ not found")
+    return rfq
+
+@api_router.put("/rfq/{rfq_id}/send")
+async def send_rfq(rfq_id: str, current_user: dict = Depends(get_current_user)):
+    """Mark RFQ as SENT and queue email to supplier"""
+    if current_user["role"] not in ["admin", "procurement"]:
+        raise HTTPException(status_code=403, detail="Only admin/procurement can send RFQs")
+    
+    rfq = await db.rfq.find_one({"id": rfq_id}, {"_id": 0})
+    if not rfq:
+        raise HTTPException(status_code=404, detail="RFQ not found")
+    
+    supplier = await db.suppliers.find_one({"id": rfq["supplier_id"]}, {"_id": 0})
+    
+    # Queue email
+    if supplier and supplier.get("email"):
+        items_list = "<br>".join([f"- {l.get('item_name')}: {l.get('qty')} {l.get('uom')}" for l in rfq.get("lines", [])])
+        email_body = f"""
+        <h2>Request for Quotation: {rfq.get('rfq_number')}</h2>
+        <p>Dear {supplier.get('name')},</p>
+        <p>Please provide your best quotation for the following items:</p>
+        <p>{items_list}</p>
+        <p>Notes: {rfq.get('notes', 'N/A')}</p>
+        <p>Thank you.</p>
+        """
+        email_item = EmailQueueItem(
+            to_email=supplier.get("email"),
+            subject=f"RFQ {rfq.get('rfq_number')} - Request for Quotation",
+            body_html=email_body,
+            ref_type="RFQ",
+            ref_id=rfq_id
+        )
+        await db.email_outbox.insert_one(email_item.model_dump())
+    
+    await db.rfq.update_one({"id": rfq_id}, {"$set": {"status": "SENT"}})
+    
+    return {"success": True, "message": "RFQ sent to supplier", "email_queued": bool(supplier and supplier.get("email"))}
+
+@api_router.put("/rfq/{rfq_id}/quote")
+async def update_rfq_quote(rfq_id: str, data: RFQQuoteUpdate, current_user: dict = Depends(get_current_user)):
+    """Update RFQ with supplier's quoted prices"""
+    if current_user["role"] not in ["admin", "procurement"]:
+        raise HTTPException(status_code=403, detail="Only admin/procurement can update RFQ quotes")
+    
+    rfq = await db.rfq.find_one({"id": rfq_id}, {"_id": 0})
+    if not rfq:
+        raise HTTPException(status_code=404, detail="RFQ not found")
+    
+    # Update lines with quoted prices
+    updated_lines = rfq.get("lines", [])
+    total_amount = 0
+    
+    for quote_line in data.lines:
+        for line in updated_lines:
+            if line.get("item_id") == quote_line.item_id:
+                line["unit_price"] = quote_line.unit_price
+                line["lead_time_days"] = quote_line.lead_time_days
+                line["total"] = line.get("qty", 0) * quote_line.unit_price
+                total_amount += line["total"]
+    
+    await db.rfq.update_one(
+        {"id": rfq_id},
+        {"$set": {
+            "lines": updated_lines,
+            "total_amount": total_amount,
+            "status": "QUOTED",
+            "quoted_at": datetime.now(timezone.utc).isoformat(),
+            "notes": data.notes or rfq.get("notes")
+        }}
+    )
+    
+    return {"success": True, "message": "RFQ quote updated", "total_amount": total_amount}
+
+@api_router.post("/rfq/{rfq_id}/convert-to-po")
+async def convert_rfq_to_po(rfq_id: str, current_user: dict = Depends(get_current_user)):
+    """Convert a quoted RFQ to a Purchase Order"""
+    if current_user["role"] not in ["admin", "procurement"]:
+        raise HTTPException(status_code=403, detail="Only admin/procurement can convert RFQ to PO")
+    
+    rfq = await db.rfq.find_one({"id": rfq_id}, {"_id": 0})
+    if not rfq:
+        raise HTTPException(status_code=404, detail="RFQ not found")
+    
+    if rfq.get("status") != "QUOTED":
+        raise HTTPException(status_code=400, detail="Only QUOTED RFQs can be converted to PO")
+    
+    # Create PO
+    po_number = await generate_sequence("PO", "purchase_orders")
+    
+    po = PurchaseOrder(
+        po_number=po_number,
+        supplier_id=rfq["supplier_id"],
+        supplier_name=rfq.get("supplier_name", ""),
+        currency=rfq.get("currency", "USD"),
+        total_amount=rfq.get("total_amount", 0),
+        rfq_id=rfq_id,
+        status="DRAFT",  # Requires finance approval
+        created_by=current_user["id"]
+    )
+    await db.purchase_orders.insert_one(po.model_dump())
+    
+    # Create PO lines
+    for line in rfq.get("lines", []):
+        po_line = PurchaseOrderLine(
+            po_id=po.id,
+            item_id=line.get("item_id"),
+            item_type=line.get("item_type", "RAW"),
+            qty=line.get("qty", 0),
+            uom=line.get("uom", "KG"),
+            unit_price=line.get("unit_price", 0),
+            required_by=line.get("required_by")
+        )
+        await db.purchase_order_lines.insert_one(po_line.model_dump())
+    
+    # Update RFQ status
+    await db.rfq.update_one({"id": rfq_id}, {"$set": {"status": "CONVERTED", "converted_po_id": po.id}})
+    
+    return {"success": True, "message": f"PO {po_number} created from RFQ", "po_id": po.id, "po_number": po_number}
+
+# ==================== PHASE 6: FINANCE APPROVAL ====================
+
+@api_router.get("/purchase-orders/pending-approval")
+async def get_pos_pending_approval(current_user: dict = Depends(get_current_user)):
+    """Get POs pending finance approval"""
+    pos = await db.purchase_orders.find(
+        {"status": "DRAFT"},
+        {"_id": 0}
+    ).sort("created_at", -1).to_list(1000)
+    
+    # Enrich with lines
+    enriched_pos = []
+    for po in pos:
+        lines = await db.purchase_order_lines.find({"po_id": po["id"]}, {"_id": 0}).to_list(1000)
+        for line in lines:
+            item = await db.inventory_items.find_one({"id": line.get("item_id")}, {"_id": 0})
+            line["item_name"] = item.get("name") if item else "Unknown"
+        po["lines"] = lines
+        enriched_pos.append(po)
+    
+    return enriched_pos
+
+@api_router.put("/purchase-orders/{po_id}/finance-approve")
+async def finance_approve_po(po_id: str, current_user: dict = Depends(get_current_user)):
+    """Finance approves a PO (Phase 6)"""
+    if current_user["role"] not in ["admin", "finance"]:
+        raise HTTPException(status_code=403, detail="Only admin/finance can approve POs")
+    
+    po = await db.purchase_orders.find_one({"id": po_id}, {"_id": 0})
+    if not po:
+        raise HTTPException(status_code=404, detail="PO not found")
+    
+    if po.get("status") != "DRAFT":
+        raise HTTPException(status_code=400, detail="Only DRAFT POs can be approved")
+    
+    await db.purchase_orders.update_one(
+        {"id": po_id},
+        {"$set": {
+            "status": "APPROVED",
+            "approved_by": current_user["id"],
+            "approved_at": datetime.now(timezone.utc).isoformat()
+        }}
+    )
+    
+    return {"success": True, "message": "PO approved by finance"}
+
+@api_router.put("/purchase-orders/{po_id}/finance-reject")
+async def finance_reject_po(po_id: str, reason: str = "", current_user: dict = Depends(get_current_user)):
+    """Finance rejects a PO"""
+    if current_user["role"] not in ["admin", "finance"]:
+        raise HTTPException(status_code=403, detail="Only admin/finance can reject POs")
+    
+    po = await db.purchase_orders.find_one({"id": po_id}, {"_id": 0})
+    if not po:
+        raise HTTPException(status_code=404, detail="PO not found")
+    
+    await db.purchase_orders.update_one(
+        {"id": po_id},
+        {"$set": {
+            "status": "REJECTED",
+            "rejected_by": current_user["id"],
+            "rejected_at": datetime.now(timezone.utc).isoformat(),
+            "rejection_reason": reason
+        }}
+    )
+    
+    return {"success": True, "message": "PO rejected by finance"}
+
+@api_router.put("/purchase-orders/{po_id}/send")
+async def send_po_to_supplier(po_id: str, current_user: dict = Depends(get_current_user)):
+    """Send approved PO to supplier via email queue"""
+    if current_user["role"] not in ["admin", "procurement", "finance"]:
+        raise HTTPException(status_code=403, detail="Only admin/procurement/finance can send POs")
+    
+    po = await db.purchase_orders.find_one({"id": po_id}, {"_id": 0})
+    if not po:
+        raise HTTPException(status_code=404, detail="PO not found")
+    
+    if po.get("status") != "APPROVED":
+        raise HTTPException(status_code=400, detail="Only APPROVED POs can be sent")
+    
+    supplier = await db.suppliers.find_one({"id": po.get("supplier_id")}, {"_id": 0})
+    
+    # Get PO lines
+    lines = await db.purchase_order_lines.find({"po_id": po_id}, {"_id": 0}).to_list(1000)
+    items_list = ""
+    for line in lines:
+        item = await db.inventory_items.find_one({"id": line.get("item_id")}, {"_id": 0})
+        items_list += f"<tr><td>{item.get('name') if item else 'Unknown'}</td><td>{line.get('qty')} {line.get('uom')}</td><td>{line.get('unit_price')}</td><td>{line.get('qty', 0) * line.get('unit_price', 0):.2f}</td></tr>"
+    
+    # Queue email
+    if supplier and supplier.get("email"):
+        email_body = f"""
+        <h2>Purchase Order: {po.get('po_number')}</h2>
+        <p>Dear {supplier.get('name')},</p>
+        <p>Please find below our Purchase Order:</p>
+        <table border="1" cellpadding="5">
+            <tr><th>Item</th><th>Qty</th><th>Unit Price</th><th>Total</th></tr>
+            {items_list}
+        </table>
+        <p><strong>Total: {po.get('currency', 'USD')} {po.get('total_amount', 0):.2f}</strong></p>
+        <p>Please confirm receipt and expected delivery date.</p>
+        <p>Thank you.</p>
+        """
+        email_item = EmailQueueItem(
+            to_email=supplier.get("email"),
+            subject=f"Purchase Order {po.get('po_number')}",
+            body_html=email_body,
+            ref_type="PO",
+            ref_id=po_id
+        )
+        await db.email_outbox.insert_one(email_item.model_dump())
+    
+    await db.purchase_orders.update_one(
+        {"id": po_id},
+        {"$set": {
+            "status": "SENT",
+            "sent_at": datetime.now(timezone.utc).isoformat()
+        }}
+    )
+    
+    return {
+        "success": True,
+        "message": f"PO {po.get('po_number')} sent to supplier",
+        "email_queued": bool(supplier and supplier.get("email"))
+    }
+
 app.include_router(api_router)
 
 app.add_middleware(
