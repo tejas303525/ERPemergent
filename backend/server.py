@@ -2962,6 +2962,110 @@ async def approve_schedule(week_start: str, current_user: dict = Depends(get_cur
         "reservations_created": reservations_created
     }
 
+# ==================== NOTIFICATIONS (STRICT EVENT-BASED) ====================
+
+class NotificationCreate(BaseModel):
+    title: str
+    message: str
+    type: str = "info"  # info, success, warning, error
+    link: Optional[str] = None
+    event_type: str  # RFQ_QUOTE_RECEIVED, PO_PENDING_APPROVAL, PRODUCTION_BLOCKED, GRN_PAYABLES_REVIEW
+    ref_type: Optional[str] = None
+    ref_id: Optional[str] = None
+
+async def create_notification(
+    event_type: str,
+    title: str,
+    message: str,
+    link: str = None,
+    ref_type: str = None,
+    ref_id: str = None,
+    target_roles: List[str] = None,
+    notification_type: str = "info"
+):
+    """Create notifications for specific events - STRICT, NO NOISE"""
+    valid_events = [
+        "RFQ_QUOTE_RECEIVED",
+        "PO_PENDING_APPROVAL", 
+        "PRODUCTION_BLOCKED",
+        "GRN_PAYABLES_REVIEW"
+    ]
+    
+    if event_type not in valid_events:
+        return None  # Silently ignore invalid events
+    
+    notification = {
+        "id": str(uuid.uuid4()),
+        "title": title,
+        "message": message,
+        "type": notification_type,
+        "link": link,
+        "event_type": event_type,
+        "ref_type": ref_type,
+        "ref_id": ref_id,
+        "target_roles": target_roles,
+        "is_read": False,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    await db.notifications.insert_one(notification)
+    return notification
+
+@api_router.get("/notifications/unread-count")
+async def get_unread_notification_count(current_user: dict = Depends(get_current_user)):
+    """Get count of unread notifications for current user's role"""
+    user_role = current_user.get("role", "")
+    
+    query = {
+        "is_read": False,
+        "$or": [
+            {"target_roles": {"$exists": False}},
+            {"target_roles": None},
+            {"target_roles": {"$in": [user_role, "all"]}}
+        ]
+    }
+    
+    count = await db.notifications.count_documents(query)
+    return {"unread_count": count}
+
+@api_router.get("/notifications/bell")
+async def get_bell_notifications(current_user: dict = Depends(get_current_user)):
+    """Get notifications for bell icon - strict event-based only"""
+    user_role = current_user.get("role", "")
+    
+    # Only show notifications relevant to user's role
+    role_events = {
+        "procurement": ["RFQ_QUOTE_RECEIVED", "PRODUCTION_BLOCKED"],
+        "finance": ["PO_PENDING_APPROVAL", "GRN_PAYABLES_REVIEW"],
+        "production": ["PRODUCTION_BLOCKED", "PO_PENDING_APPROVAL"],
+        "admin": ["RFQ_QUOTE_RECEIVED", "PO_PENDING_APPROVAL", "PRODUCTION_BLOCKED", "GRN_PAYABLES_REVIEW"]
+    }
+    
+    allowed_events = role_events.get(user_role, role_events.get("admin", []))
+    
+    notifications = await db.notifications.find({
+        "event_type": {"$in": allowed_events},
+        "$or": [
+            {"target_roles": {"$exists": False}},
+            {"target_roles": None},
+            {"target_roles": {"$in": [user_role, "all"]}}
+        ]
+    }, {"_id": 0}).sort("created_at", -1).limit(20).to_list(20)
+    
+    unread_count = await db.notifications.count_documents({
+        "event_type": {"$in": allowed_events},
+        "is_read": False,
+        "$or": [
+            {"target_roles": {"$exists": False}},
+            {"target_roles": None},
+            {"target_roles": {"$in": [user_role, "all"]}}
+        ]
+    })
+    
+    return {
+        "notifications": notifications,
+        "unread_count": unread_count
+    }
+
 # ==================== PHASE 3: SMTP EMAIL QUEUE ====================
 
 class EmailQueueCreate(BaseModel):
