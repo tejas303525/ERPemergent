@@ -3153,6 +3153,32 @@ async def get_bell_notifications(current_user: dict = Depends(get_current_user))
         "unread_count": unread_count
     }
 
+@api_router.put("/notifications/{notification_id}/read")
+async def mark_notification_read(notification_id: str, current_user: dict = Depends(get_current_user)):
+    """Mark a notification as read"""
+    await db.notifications.update_one(
+        {"id": notification_id},
+        {"$set": {"is_read": True}}
+    )
+    return {"success": True}
+
+@api_router.put("/notifications/read-all")
+async def mark_all_notifications_read(current_user: dict = Depends(get_current_user)):
+    """Mark all notifications as read for current user's role"""
+    user_role = current_user.get("role", "")
+    await db.notifications.update_many(
+        {
+            "is_read": False,
+            "$or": [
+                {"target_roles": {"$exists": False}},
+                {"target_roles": None},
+                {"target_roles": {"$in": [user_role, "all"]}}
+            ]
+        },
+        {"$set": {"is_read": True}}
+    )
+    return {"success": True}
+
 # ==================== PHASE 3: SMTP EMAIL QUEUE ====================
 
 class EmailQueueCreate(BaseModel):
