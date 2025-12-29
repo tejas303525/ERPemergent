@@ -619,11 +619,11 @@ async def approve_quotation(quotation_id: str, current_user: dict = Depends(get_
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Quotation not found or already processed")
     
-    # Send email notification and create in-app notification
+    # Get quotation details
     quotation = await db.quotations.find_one({"id": quotation_id}, {"_id": 0})
     if quotation:
+        # Send email notification and create in-app notification
         asyncio.create_task(notify_quotation_approved(quotation))
-        # Create in-app notification
         await db.notifications.insert_one({
             "id": str(uuid.uuid4()),
             "title": "Quotation Approved",
@@ -635,8 +635,154 @@ async def approve_quotation(quotation_id: str, current_user: dict = Depends(get_
             "created_by": "system",
             "created_at": datetime.now(timezone.utc).isoformat()
         })
+        
+        # PHASE 1: Check material availability and create shortages
+        material_check = await check_material_availability_for_quotation(quotation)
+        
+        if material_check["has_shortages"]:
+            # Create notification for procurement about shortages
+            await create_notification(
+                event_type="MATERIAL_SHORTAGE",
+                title="Material Shortage Detected",
+                message=f"Quotation {quotation.get('pfi_number')} approved but {len(material_check['shortages'])} materials need procurement",
+                link="/procurement",
+                target_roles=["admin", "procurement"],
+                notification_type="warning"
+            )
     
-    return {"message": "Quotation approved"}
+    return {"message": "Quotation approved", "material_check": material_check if quotation else None}
+
+
+async def check_material_availability_for_quotation(quotation: dict) -> dict:
+    """
+    Check raw materials and packaging availability for a quotation.
+    Creates RFQ suggestions for shortages.
+    """
+    shortages = []
+    items = quotation.get("items", [])
+    
+    for item in items:
+        product_id = item.get("product_id")
+        quantity = item.get("quantity", 0)
+        packaging = item.get("packaging", "Bulk")
+        net_weight_kg = item.get("net_weight_kg", 200)  # Default 200kg per unit
+        
+        # Calculate total KG needed
+        if packaging != "Bulk":
+            total_kg = quantity * net_weight_kg
+        else:
+            total_kg = quantity * 1000  # Assume quantity is in MT for bulk
+        
+        # Get active product BOM
+        product_bom = await db.product_boms.find_one({
+            "product_id": product_id,
+            "is_active": True
+        }, {"_id": 0})
+        
+        if product_bom:
+            bom_items = await db.product_bom_items.find({
+                "bom_id": product_bom["id"]
+            }, {"_id": 0}).to_list(100)
+            
+            for bom_item in bom_items:
+                material_id = bom_item.get("material_item_id")
+                qty_per_kg = bom_item.get("qty_kg_per_kg_finished", 0)
+                required_qty = total_kg * qty_per_kg
+                
+                material = await db.inventory_items.find_one({"id": material_id}, {"_id": 0})
+                if not material:
+                    continue
+                
+                balance = await db.inventory_balances.find_one({"item_id": material_id}, {"_id": 0})
+                on_hand = balance.get("on_hand", 0) if balance else 0
+                reserved = balance.get("reserved", 0) if balance else 0
+                available = on_hand - reserved
+                
+                shortage = max(0, required_qty - available)
+                
+                if shortage > 0:
+                    shortages.append({
+                        "type": "RAW_MATERIAL",
+                        "item_id": material_id,
+                        "item_name": material.get("name"),
+                        "item_sku": material.get("sku"),
+                        "required_qty": required_qty,
+                        "available": available,
+                        "shortage": shortage,
+                        "uom": material.get("uom", "KG"),
+                        "product_name": item.get("product_name"),
+                        "quotation_id": quotation.get("id"),
+                        "pfi_number": quotation.get("pfi_number")
+                    })
+        
+        # Check packaging availability (for non-bulk)
+        if packaging != "Bulk":
+            # Find packaging type
+            packaging_type = await db.packaging.find_one({
+                "name": {"$regex": packaging, "$options": "i"}
+            }, {"_id": 0})
+            
+            if packaging_type:
+                packaging_bom = await db.packaging_boms.find_one({
+                    "packaging_id": packaging_type["id"],
+                    "is_active": True
+                }, {"_id": 0})
+                
+                if packaging_bom:
+                    pack_items = await db.packaging_bom_items.find({
+                        "packaging_bom_id": packaging_bom["id"]
+                    }, {"_id": 0}).to_list(100)
+                    
+                    for pack_item in pack_items:
+                        pack_id = pack_item.get("pack_item_id")
+                        qty_per_drum = pack_item.get("qty_per_drum", 1)
+                        required_qty = quantity * qty_per_drum
+                        
+                        pack_material = await db.inventory_items.find_one({"id": pack_id}, {"_id": 0})
+                        if not pack_material:
+                            continue
+                        
+                        balance = await db.inventory_balances.find_one({"item_id": pack_id}, {"_id": 0})
+                        on_hand = balance.get("on_hand", 0) if balance else 0
+                        reserved = balance.get("reserved", 0) if balance else 0
+                        available = on_hand - reserved
+                        
+                        shortage = max(0, required_qty - available)
+                        
+                        if shortage > 0:
+                            shortages.append({
+                                "type": "PACKAGING",
+                                "item_id": pack_id,
+                                "item_name": pack_material.get("name"),
+                                "item_sku": pack_material.get("sku"),
+                                "required_qty": required_qty,
+                                "available": available,
+                                "shortage": shortage,
+                                "uom": pack_material.get("uom", "EA"),
+                                "product_name": item.get("product_name"),
+                                "quotation_id": quotation.get("id"),
+                                "pfi_number": quotation.get("pfi_number")
+                            })
+    
+    # Store shortages in material_shortage collection for RFQ
+    if shortages:
+        for shortage in shortages:
+            existing = await db.material_shortages.find_one({
+                "item_id": shortage["item_id"],
+                "quotation_id": shortage["quotation_id"],
+                "status": "PENDING"
+            })
+            if not existing:
+                shortage["id"] = str(uuid.uuid4())
+                shortage["status"] = "PENDING"
+                shortage["created_at"] = datetime.now(timezone.utc).isoformat()
+                await db.material_shortages.insert_one(shortage)
+    
+    return {
+        "has_shortages": len(shortages) > 0,
+        "shortages": shortages,
+        "total_shortage_items": len(shortages)
+    }
 
 @api_router.put("/quotations/{quotation_id}/reject")
 async def reject_quotation(quotation_id: str, current_user: dict = Depends(get_current_user)):
