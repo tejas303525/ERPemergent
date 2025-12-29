@@ -3692,6 +3692,18 @@ async def update_rfq_quote(rfq_id: str, data: RFQQuoteUpdate, current_user: dict
         }}
     )
     
+    # Create notification for RFQ quote received
+    await create_notification(
+        event_type="RFQ_QUOTE_RECEIVED",
+        title=f"Quote Received: {rfq.get('rfq_number')}",
+        message=f"Supplier {rfq.get('supplier_name')} quoted {rfq.get('currency', 'USD')} {total_amount:.2f}",
+        link="/procurement",
+        ref_type="RFQ",
+        ref_id=rfq_id,
+        target_roles=["admin", "procurement"],
+        notification_type="success"
+    )
+    
     return {"success": True, "message": "RFQ quote updated", "total_amount": total_amount}
 
 @api_router.post("/rfq/{rfq_id}/convert-to-po")
