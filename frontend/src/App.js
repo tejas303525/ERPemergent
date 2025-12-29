@@ -32,6 +32,7 @@ import LogisticsPage from './pages/LogisticsPage';
 import BOMManagementPage from './pages/BOMManagementPage';
 import TransportWindowPage from './pages/TransportWindowPage';
 import ImportWindowPage from './pages/ImportWindowPage';
+import UnifiedProductionSchedulePage from './pages/UnifiedProductionSchedulePage';
 
 // Layout
 import MainLayout from './components/layout/MainLayout';
