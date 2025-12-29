@@ -103,12 +103,12 @@ export default function DeliveryOrdersPage() {
                   </div>
                   <div className="form-field">
                     <Label>Shipping Booking (Optional)</Label>
-                    <Select value={form.shipping_booking_id} onValueChange={(v) => setForm({...form, shipping_booking_id: v})}>
+                    <Select value={form.shipping_booking_id || "none"} onValueChange={(v) => setForm({...form, shipping_booking_id: v === "none" ? "" : v})}>
                       <SelectTrigger>
                         <SelectValue placeholder="Select shipping booking" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="">None</SelectItem>
+                        <SelectItem value="none">None</SelectItem>
                         {bookings.map(b => (
                           <SelectItem key={b.id} value={b.id}>
                             {b.booking_number} - {b.shipping_line}
