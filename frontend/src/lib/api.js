@@ -250,6 +250,42 @@ export const procurementShortagesAPI = {
   autoGenerate: () => api.post('/procurement/auto-generate'),
 };
 
+// Payables
+export const payablesAPI = {
+  getBills: (status) => api.get('/payables/bills', { params: { status } }),
+  createBill: (data) => api.post('/payables/bills', data),
+  approveBill: (id) => api.put(`/payables/bills/${id}/approve`),
+  payBill: (id) => api.put(`/payables/bills/${id}/pay`),
+};
+
+// Receivables
+export const receivablesAPI = {
+  getInvoices: (status, invoiceType) => api.get('/receivables/invoices', { params: { status, invoice_type: invoiceType } }),
+  createInvoice: (data) => api.post('/receivables/invoices', data),
+  recordPayment: (id, amount) => api.put(`/receivables/invoices/${id}/record-payment`, null, { params: { amount } }),
+};
+
+// Security
+export const securityAPI = {
+  createInwardChecklist: (data) => api.post('/security/inward-checklist', null, { params: data }),
+  completeChecklist: (id, weightOut) => api.put(`/security/checklist/${id}/complete`, null, { params: { weight_out: weightOut } }),
+  getChecklists: (status) => api.get('/security/checklists', { params: { status } }),
+};
+
+// QC
+export const qcAPI = {
+  createInspection: (data) => api.post('/qc/inspection', null, { params: data }),
+  updateResult: (id, status, notes) => api.put(`/qc/inspection/${id}/result`, null, { params: { status, notes } }),
+  getInspections: (status) => api.get('/qc/inspections', { params: { status } }),
+};
+
+// Logistics Routing
+export const logisticsAPI = {
+  getRoutingOptions: () => api.get('/logistics/routing-options'),
+  routePO: (poId, incoterm) => api.post(`/logistics/route-po/${poId}`, null, { params: { incoterm } }),
+  getRouting: (status) => api.get('/logistics/routing', { params: { status } }),
+};
+
 // User Management
 export const userAPI = {
   getAll: () => api.get('/users'),
