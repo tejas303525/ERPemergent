@@ -1,19 +1,21 @@
 import React, { useState, useEffect } from 'react';
-import { rfqAPI, procurementReqAPI, purchaseOrderAPI, inventoryItemAPI } from '../lib/api';
+import { rfqAPI, procurementReqAPI, inventoryItemAPI, procurementShortagesAPI } from '../lib/api';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
-import { FileText, Plus, Send, Check, X, Package, Truck, ShoppingCart, AlertTriangle } from 'lucide-react';
+import { FileText, Plus, Send, Check, X, Package, ShoppingCart, AlertTriangle, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 
 const ProcurementPage = () => {
-  const [activeTab, setActiveTab] = useState('rfq');
+  const [activeTab, setActiveTab] = useState('shortages');
   const [rfqs, setRfqs] = useState([]);
   const [procurementReqs, setProcurementReqs] = useState([]);
+  const [shortages, setShortages] = useState({ raw_shortages: [], pack_shortages: [], all_shortages: [] });
   const [inventoryItems, setInventoryItems] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [showCreateRFQ, setShowCreateRFQ] = useState(false);
   const [selectedRfq, setSelectedRfq] = useState(null);
+  const [generatingPR, setGeneratingPR] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -22,14 +24,16 @@ const ProcurementPage = () => {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [rfqRes, prRes, itemsRes] = await Promise.all([
+      const [rfqRes, prRes, itemsRes, shortagesRes] = await Promise.all([
         rfqAPI.getAll(),
         procurementReqAPI.getAll('DRAFT'),
-        inventoryItemAPI.getAll()
+        inventoryItemAPI.getAll(),
+        procurementShortagesAPI.getShortages()
       ]);
       setRfqs(rfqRes.data);
       setProcurementReqs(prRes.data);
       setInventoryItems(itemsRes.data);
+      setShortages(shortagesRes.data);
 
       // Load suppliers
       const suppRes = await fetch(`${process.env.REACT_APP_BACKEND_URL}/api/suppliers`, {
@@ -42,6 +46,19 @@ const ProcurementPage = () => {
       toast.error('Failed to load data');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleAutoGenerate = async () => {
+    setGeneratingPR(true);
+    try {
+      const res = await procurementShortagesAPI.autoGenerate();
+      toast.success(res.data.message);
+      loadData();
+    } catch (error) {
+      toast.error('Failed to auto-generate PR: ' + (error.response?.data?.detail || error.message));
+    } finally {
+      setGeneratingPR(false);
     }
   };
 
