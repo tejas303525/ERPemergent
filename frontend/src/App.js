@@ -78,8 +78,8 @@ const AppRoutes = () => {
                 <Route path="/qc" element={<QCPage />} />
                 <Route path="/customers" element={<CustomersPage />} />
                 <Route path="/products" element={<ProductsPage />} />
-                <Route path="/production-schedule" element={<ProductionSchedulePage />} />
-                <Route path="/drum-schedule" element={<DrumSchedulePage />} />
+                <Route path="/production-schedule" element={<UnifiedProductionSchedulePage />} />
+                <Route path="/drum-schedule" element={<UnifiedProductionSchedulePage />} />
                 <Route path="/blend-reports" element={<BlendReportsPage />} />
                 <Route path="/procurement" element={<ProcurementPage />} />
                 <Route path="/finance-approval" element={<FinanceApprovalPage />} />
