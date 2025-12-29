@@ -3750,6 +3750,18 @@ async def convert_rfq_to_po(rfq_id: str, current_user: dict = Depends(get_curren
     # Update RFQ status
     await db.rfq.update_one({"id": rfq_id}, {"$set": {"status": "CONVERTED", "converted_po_id": po.id}})
     
+    # Create notification for PO pending approval
+    await create_notification(
+        event_type="PO_PENDING_APPROVAL",
+        title=f"PO Pending Approval: {po_number}",
+        message=f"New PO from {rfq.get('supplier_name')} for {rfq.get('currency', 'USD')} {rfq.get('total_amount', 0):.2f} requires finance approval",
+        link="/finance-approval",
+        ref_type="PO",
+        ref_id=po.id,
+        target_roles=["admin", "finance"],
+        notification_type="warning"
+    )
+    
     return {"success": True, "message": f"PO {po_number} created from RFQ", "po_id": po.id, "po_number": po_number}
 
 # ==================== PHASE 6: FINANCE APPROVAL ====================
