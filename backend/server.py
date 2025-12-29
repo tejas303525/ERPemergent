@@ -3655,21 +3655,39 @@ async def auto_generate_procurement(current_user: dict = Depends(get_current_use
 
 class RFQCreate(BaseModel):
     supplier_id: str
-    lines: List[Dict[str, Any]]  # [{item_id, qty, required_by}]
+    rfq_type: str = "PRODUCT"  # PRODUCT or PACKAGING
+    lines: List[Dict[str, Any]]  # [{item_id, qty, required_by, job_numbers}]
+    billing_company: Optional[str] = None
+    billing_address: Optional[str] = None
+    shipping_company: Optional[str] = None
+    shipping_address: Optional[str] = None
+    delivery_date: Optional[str] = None
+    payment_terms: Optional[str] = None
+    incoterm: Optional[str] = None
     notes: Optional[str] = None
 
 class RFQ(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     rfq_number: str = ""
+    rfq_type: str = "PRODUCT"  # PRODUCT or PACKAGING
     supplier_id: str
     supplier_name: str = ""
-    status: str = "DRAFT"  # DRAFT, SENT, QUOTED, CANCELLED
+    supplier_address: str = ""
+    billing_company: Optional[str] = None
+    billing_address: Optional[str] = None
+    shipping_company: Optional[str] = None
+    shipping_address: Optional[str] = None
+    delivery_date: Optional[str] = None
+    payment_terms: Optional[str] = None
+    incoterm: Optional[str] = None
+    status: str = "DRAFT"  # DRAFT, SENT, QUOTED, CONVERTED, CANCELLED
     lines: List[Dict[str, Any]] = []
     total_amount: float = 0
     currency: str = "USD"
     notes: Optional[str] = None
     quoted_at: Optional[str] = None
+    converted_po_id: Optional[str] = None
     created_by: str = ""
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
