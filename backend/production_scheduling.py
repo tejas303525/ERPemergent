@@ -196,13 +196,15 @@ class PurchaseOrderLineCreate(BaseModel):
     item_type: str  # RAW or PACK
     qty: float
     uom: str
-    required_by: str  # ISO date
+    unit_price: float = 0
+    required_by: Optional[str] = None  # ISO date
     promised_delivery_date: Optional[str] = None  # ETA from supplier
 
 class PurchaseOrderLine(PurchaseOrderLineCreate):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     received_qty: float = 0
+    status: str = "OPEN"  # OPEN, PARTIAL, RECEIVED
 
 class EmailOutboxCreate(BaseModel):
     to: str
