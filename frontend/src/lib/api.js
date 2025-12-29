@@ -236,6 +236,7 @@ export const pdfAPI = {
 // Notifications (Event-Based Bell)
 export const notificationAPI = {
   getBell: () => api.get('/notifications/bell'),
+  getRecent: () => api.get('/notifications/bell'), // Alias for getBell
   getUnreadCount: () => api.get('/notifications/unread-count'),
   markRead: (id) => api.put(`/notifications/${id}/read`),
   markAllRead: () => api.put('/notifications/read-all'),
