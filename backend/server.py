@@ -4644,6 +4644,550 @@ async def get_qc_inspections(status: Optional[str] = None, current_user: dict = 
     inspections = await db.qc_inspections.find(query, {"_id": 0}).sort("created_at", -1).to_list(1000)
     return inspections
 
+
+# ==================== PHASE 1: TRANSPORT WINDOW (4 Tables) ====================
+
+class TransportInward(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    transport_number: str = ""
+    po_id: str
+    po_number: str
+    supplier_name: str
+    incoterm: str
+    vehicle_number: Optional[str] = None
+    driver_name: Optional[str] = None
+    driver_contact: Optional[str] = None
+    eta: Optional[str] = None
+    actual_arrival: Optional[str] = None
+    status: str = "PENDING"  # PENDING, SCHEDULED, IN_TRANSIT, ARRIVED, COMPLETED
+    source: str = "EXW"  # EXW (direct) or IMPORT (post-import)
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+
+class TransportOutward(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    transport_number: str = ""
+    do_id: Optional[str] = None
+    do_number: Optional[str] = None
+    job_order_id: Optional[str] = None
+    job_number: Optional[str] = None
+    customer_name: str
+    transport_type: str = "LOCAL"  # LOCAL, CONTAINER
+    vehicle_number: Optional[str] = None
+    container_number: Optional[str] = None
+    destination: Optional[str] = None
+    dispatch_date: Optional[str] = None
+    delivery_date: Optional[str] = None
+    status: str = "PENDING"  # PENDING, LOADING, DISPATCHED, DELIVERED
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+
+@api_router.get("/transport/inward")
+async def get_transport_inward(status: Optional[str] = None, current_user: dict = Depends(get_current_user)):
+    """Get inward transport records"""
+    query = {}
+    if status:
+        query["status"] = status
+    records = await db.transport_inward.find(query, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    return records
+
+
+@api_router.post("/transport/inward")
+async def create_transport_inward(data: dict, current_user: dict = Depends(get_current_user)):
+    """Create inward transport record"""
+    transport_number = await generate_sequence("TIN", "transport_inward")
+    record = TransportInward(
+        transport_number=transport_number,
+        **data
+    )
+    await db.transport_inward.insert_one(record.model_dump())
+    return record
+
+
+@api_router.put("/transport/inward/{transport_id}/status")
+async def update_transport_inward_status(transport_id: str, status: str, current_user: dict = Depends(get_current_user)):
+    """Update inward transport status"""
+    update_data = {"status": status}
+    if status == "ARRIVED":
+        update_data["actual_arrival"] = datetime.now(timezone.utc).isoformat()
+    
+    result = await db.transport_inward.update_one(
+        {"id": transport_id},
+        {"$set": update_data}
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Transport record not found")
+    
+    # If arrived, route to Security & QC
+    if status == "ARRIVED":
+        transport = await db.transport_inward.find_one({"id": transport_id}, {"_id": 0})
+        if transport:
+            await create_notification(
+                event_type="TRANSPORT_ARRIVED",
+                title="Inward Transport Arrived",
+                message=f"Transport {transport.get('transport_number')} has arrived at facility",
+                link="/security",
+                target_roles=["admin", "security", "qc"],
+                notification_type="info"
+            )
+    
+    return {"success": True, "message": f"Transport status updated to {status}"}
+
+
+@api_router.get("/transport/outward")
+async def get_transport_outward(
+    status: Optional[str] = None, 
+    transport_type: Optional[str] = None,
+    current_user: dict = Depends(get_current_user)
+):
+    """Get outward transport records"""
+    query = {}
+    if status:
+        query["status"] = status
+    if transport_type:
+        query["transport_type"] = transport_type
+    records = await db.transport_outward.find(query, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    return records
+
+
+@api_router.post("/transport/outward")
+async def create_transport_outward(data: dict, current_user: dict = Depends(get_current_user)):
+    """Create outward transport record"""
+    transport_number = await generate_sequence("TOUT", "transport_outward")
+    record = TransportOutward(
+        transport_number=transport_number,
+        **data
+    )
+    await db.transport_outward.insert_one(record.model_dump())
+    return record
+
+
+@api_router.put("/transport/outward/{transport_id}/status")
+async def update_transport_outward_status(transport_id: str, status: str, current_user: dict = Depends(get_current_user)):
+    """Update outward transport status"""
+    update_data = {"status": status}
+    if status == "DISPATCHED":
+        update_data["dispatch_date"] = datetime.now(timezone.utc).isoformat()
+    elif status == "DELIVERED":
+        update_data["delivery_date"] = datetime.now(timezone.utc).isoformat()
+    
+    result = await db.transport_outward.update_one(
+        {"id": transport_id},
+        {"$set": update_data}
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Transport record not found")
+    
+    return {"success": True, "message": f"Transport status updated to {status}"}
+
+
+# ==================== PHASE 1: IMPORT WINDOW ====================
+
+class ImportRecord(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    import_number: str = ""
+    po_id: str
+    po_number: str
+    supplier_name: str
+    incoterm: str
+    country_of_origin: str = ""
+    destination_port: str = ""
+    eta: Optional[str] = None
+    actual_arrival: Optional[str] = None
+    status: str = "PENDING_DOCS"  # PENDING_DOCS, IN_TRANSIT, AT_PORT, CLEARED, COMPLETED
+    document_checklist: List[Dict] = Field(default_factory=list)
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+
+def get_default_import_checklist():
+    return [
+        {"type": "COMMERCIAL_INVOICE", "name": "Commercial Invoice", "required": True, "received": False},
+        {"type": "PACKING_LIST", "name": "Packing List", "required": True, "received": False},
+        {"type": "BILL_OF_LADING", "name": "Bill of Lading (B/L)", "required": True, "received": False},
+        {"type": "CERTIFICATE_OF_ORIGIN", "name": "Certificate of Origin (COO)", "required": True, "received": False},
+        {"type": "CERTIFICATE_OF_ANALYSIS", "name": "Certificate of Analysis (COA)", "required": True, "received": False},
+        {"type": "INSURANCE_CERT", "name": "Insurance Certificate", "required": False, "received": False},
+        {"type": "PHYTO_CERT", "name": "Phytosanitary Certificate", "required": False, "received": False},
+        {"type": "MSDS", "name": "Material Safety Data Sheet", "required": False, "received": False},
+    ]
+
+
+@api_router.get("/imports")
+async def get_imports(status: Optional[str] = None, current_user: dict = Depends(get_current_user)):
+    """Get import records"""
+    query = {}
+    if status:
+        query["status"] = status
+    records = await db.imports.find(query, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    return records
+
+
+@api_router.post("/imports")
+async def create_import(data: dict, current_user: dict = Depends(get_current_user)):
+    """Create import record from PO"""
+    import_number = await generate_sequence("IMP", "imports")
+    record = ImportRecord(
+        import_number=import_number,
+        document_checklist=get_default_import_checklist(),
+        **data
+    )
+    await db.imports.insert_one(record.model_dump())
+    return record
+
+
+@api_router.put("/imports/{import_id}/checklist")
+async def update_import_checklist(import_id: str, checklist: List[Dict], current_user: dict = Depends(get_current_user)):
+    """Update import document checklist"""
+    result = await db.imports.update_one(
+        {"id": import_id},
+        {"$set": {"document_checklist": checklist}}
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Import record not found")
+    return {"success": True, "message": "Checklist updated"}
+
+
+@api_router.put("/imports/{import_id}/status")
+async def update_import_status(import_id: str, status: str, current_user: dict = Depends(get_current_user)):
+    """Update import status"""
+    update_data = {"status": status}
+    if status == "AT_PORT":
+        update_data["actual_arrival"] = datetime.now(timezone.utc).isoformat()
+    
+    result = await db.imports.update_one(
+        {"id": import_id},
+        {"$set": update_data}
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Import record not found")
+    
+    # If completed, create inward transport
+    if status == "COMPLETED":
+        import_record = await db.imports.find_one({"id": import_id}, {"_id": 0})
+        if import_record:
+            # Auto-create transport inward record
+            transport_number = await generate_sequence("TIN", "transport_inward")
+            transport = TransportInward(
+                transport_number=transport_number,
+                po_id=import_record.get("po_id"),
+                po_number=import_record.get("po_number"),
+                supplier_name=import_record.get("supplier_name"),
+                incoterm=import_record.get("incoterm"),
+                source="IMPORT"
+            )
+            await db.transport_inward.insert_one(transport.model_dump())
+            
+            await create_notification(
+                event_type="IMPORT_COMPLETED",
+                title="Import Customs Cleared",
+                message=f"Import {import_record.get('import_number')} cleared - Transport scheduled",
+                link="/transport-window",
+                target_roles=["admin", "transport"],
+                notification_type="success"
+            )
+    
+    return {"success": True, "message": f"Import status updated to {status}"}
+
+
+# ==================== PHASE 1: UNIFIED PRODUCTION SCHEDULE ====================
+
+@api_router.get("/production/unified-schedule")
+async def get_unified_production_schedule(
+    start_date: Optional[str] = None,
+    days: int = 14,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Get unified production schedule with 600 drums/day constraint.
+    Combines drum schedule and production schedule into one view.
+    """
+    if not start_date:
+        start_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    
+    DRUMS_PER_DAY = 600
+    
+    # Get all pending/approved job orders
+    job_orders = await db.job_orders.find(
+        {"status": {"$in": ["pending", "approved", "in_production"]}},
+        {"_id": 0}
+    ).sort("delivery_date", 1).to_list(1000)
+    
+    # Build schedule day by day
+    schedule = []
+    current_date = datetime.strptime(start_date, "%Y-%m-%d")
+    remaining_jobs = list(job_orders)
+    
+    for day_offset in range(days):
+        day_date = current_date + timedelta(days=day_offset)
+        day_str = day_date.strftime("%Y-%m-%d")
+        
+        day_schedule = {
+            "date": day_str,
+            "day_name": day_date.strftime("%A"),
+            "drums_capacity": DRUMS_PER_DAY,
+            "drums_scheduled": 0,
+            "drums_remaining": DRUMS_PER_DAY,
+            "jobs": [],
+            "is_full": False,
+            "utilization": 0
+        }
+        
+        # Allocate jobs to this day
+        jobs_to_remove = []
+        for job in remaining_jobs:
+            job_drums = job.get("quantity", 0)
+            
+            # Check if job fits in day's capacity
+            if day_schedule["drums_remaining"] >= job_drums:
+                # Check material availability
+                material_status = await check_job_material_availability(job)
+                
+                day_schedule["jobs"].append({
+                    "job_number": job.get("job_number"),
+                    "job_id": job.get("id"),
+                    "product_name": job.get("product_name"),
+                    "product_sku": job.get("product_sku"),
+                    "quantity": job_drums,
+                    "packaging": job.get("packaging", "200L Drum"),
+                    "delivery_date": job.get("delivery_date"),
+                    "priority": job.get("priority", "normal"),
+                    "material_ready": material_status["ready"],
+                    "shortage_items": material_status.get("shortage_count", 0),
+                    "status": job.get("status")
+                })
+                
+                day_schedule["drums_scheduled"] += job_drums
+                day_schedule["drums_remaining"] -= job_drums
+                jobs_to_remove.append(job)
+            elif day_schedule["drums_remaining"] > 0:
+                # Partial allocation - split job across days
+                partial_drums = day_schedule["drums_remaining"]
+                material_status = await check_job_material_availability(job)
+                
+                day_schedule["jobs"].append({
+                    "job_number": job.get("job_number"),
+                    "job_id": job.get("id"),
+                    "product_name": job.get("product_name"),
+                    "product_sku": job.get("product_sku"),
+                    "quantity": partial_drums,
+                    "packaging": job.get("packaging", "200L Drum"),
+                    "delivery_date": job.get("delivery_date"),
+                    "priority": job.get("priority", "normal"),
+                    "material_ready": material_status["ready"],
+                    "shortage_items": material_status.get("shortage_count", 0),
+                    "status": job.get("status"),
+                    "is_partial": True,
+                    "total_quantity": job_drums
+                })
+                
+                day_schedule["drums_scheduled"] += partial_drums
+                day_schedule["drums_remaining"] = 0
+                
+                # Update remaining quantity in job
+                job["quantity"] = job_drums - partial_drums
+                break
+        
+        # Remove fully allocated jobs
+        for job in jobs_to_remove:
+            remaining_jobs.remove(job)
+        
+        day_schedule["is_full"] = day_schedule["drums_remaining"] == 0
+        day_schedule["utilization"] = round((day_schedule["drums_scheduled"] / DRUMS_PER_DAY) * 100, 1)
+        schedule.append(day_schedule)
+    
+    # Summary stats
+    total_drums = sum(d["drums_scheduled"] for d in schedule)
+    jobs_scheduled = sum(len(d["jobs"]) for d in schedule)
+    unscheduled_jobs = len(remaining_jobs)
+    
+    return {
+        "schedule": schedule,
+        "summary": {
+            "total_drums_scheduled": total_drums,
+            "jobs_scheduled": jobs_scheduled,
+            "unscheduled_jobs": unscheduled_jobs,
+            "days_with_capacity": len([d for d in schedule if not d["is_full"]]),
+            "average_utilization": round(sum(d["utilization"] for d in schedule) / len(schedule), 1) if schedule else 0
+        },
+        "constraints": {
+            "drums_per_day": DRUMS_PER_DAY
+        }
+    }
+
+
+async def check_job_material_availability(job: dict) -> dict:
+    """Check if all materials are available for a job"""
+    product_id = job.get("product_id")
+    quantity = job.get("quantity", 0)
+    
+    shortage_count = 0
+    
+    # Get active product BOM
+    product_bom = await db.product_boms.find_one({
+        "product_id": product_id,
+        "is_active": True
+    }, {"_id": 0})
+    
+    if product_bom:
+        bom_items = await db.product_bom_items.find({
+            "bom_id": product_bom["id"]
+        }, {"_id": 0}).to_list(100)
+        
+        for bom_item in bom_items:
+            material_id = bom_item.get("material_item_id")
+            qty_per_kg = bom_item.get("qty_kg_per_kg_finished", 0)
+            
+            # Assume 200kg per drum
+            finished_kg = quantity * 200
+            required_qty = finished_kg * qty_per_kg
+            
+            balance = await db.inventory_balances.find_one({"item_id": material_id}, {"_id": 0})
+            available = (balance.get("on_hand", 0) - balance.get("reserved", 0)) if balance else 0
+            
+            if available < required_qty:
+                shortage_count += 1
+    
+    return {
+        "ready": shortage_count == 0,
+        "shortage_count": shortage_count
+    }
+
+
+# ==================== INCOTERM ROUTING ON PO APPROVAL ====================
+
+@api_router.put("/purchase-orders/{po_id}/route-by-incoterm")
+async def route_po_by_incoterm(po_id: str, current_user: dict = Depends(get_current_user)):
+    """
+    Route PO to appropriate window based on incoterm:
+    - EXW → Transportation Window (Inward)
+    - DDP → Security & QC Module
+    - FOB → Shipping Module  
+    - CFR → Import Window
+    """
+    po = await db.purchase_orders.find_one({"id": po_id}, {"_id": 0})
+    if not po:
+        raise HTTPException(status_code=404, detail="Purchase order not found")
+    
+    incoterm = po.get("incoterm", "EXW").upper()
+    route_result = {"po_id": po_id, "incoterm": incoterm, "routed_to": None}
+    
+    if incoterm == "EXW":
+        # Route to Transportation Window (Inward)
+        transport_number = await generate_sequence("TIN", "transport_inward")
+        transport = TransportInward(
+            transport_number=transport_number,
+            po_id=po_id,
+            po_number=po.get("po_number"),
+            supplier_name=po.get("supplier_name"),
+            incoterm=incoterm,
+            source="EXW"
+        )
+        await db.transport_inward.insert_one(transport.model_dump())
+        route_result["routed_to"] = "TRANSPORTATION_INWARD"
+        route_result["transport_number"] = transport_number
+        
+    elif incoterm == "DDP":
+        # Route to Security & QC
+        checklist_number = await generate_sequence("SEC", "security_checklists")
+        checklist = {
+            "id": str(uuid.uuid4()),
+            "checklist_number": checklist_number,
+            "ref_type": "PO",
+            "ref_id": po_id,
+            "ref_number": po.get("po_number"),
+            "supplier_name": po.get("supplier_name"),
+            "checklist_type": "INWARD",
+            "status": "PENDING",
+            "created_at": datetime.now(timezone.utc).isoformat()
+        }
+        await db.security_checklists.insert_one(checklist)
+        route_result["routed_to"] = "SECURITY_QC"
+        route_result["checklist_number"] = checklist_number
+        
+    elif incoterm == "FOB":
+        # Route to Shipping Module
+        shipping_number = await generate_sequence("SHIP", "shipping_bookings")
+        shipping = {
+            "id": str(uuid.uuid4()),
+            "booking_number": shipping_number,
+            "ref_type": "PO_IMPORT",
+            "ref_id": po_id,
+            "po_number": po.get("po_number"),
+            "supplier_name": po.get("supplier_name"),
+            "incoterm": incoterm,
+            "status": "PENDING",
+            "created_at": datetime.now(timezone.utc).isoformat()
+        }
+        await db.shipping_bookings.insert_one(shipping)
+        route_result["routed_to"] = "SHIPPING"
+        route_result["booking_number"] = shipping_number
+        
+    elif incoterm in ["CFR", "CIF", "CIP"]:
+        # Route to Import Window
+        import_number = await generate_sequence("IMP", "imports")
+        import_record = ImportRecord(
+            import_number=import_number,
+            po_id=po_id,
+            po_number=po.get("po_number"),
+            supplier_name=po.get("supplier_name"),
+            incoterm=incoterm,
+            document_checklist=get_default_import_checklist()
+        )
+        await db.imports.insert_one(import_record.model_dump())
+        route_result["routed_to"] = "IMPORT"
+        route_result["import_number"] = import_number
+    
+    else:
+        # Default to EXW behavior
+        transport_number = await generate_sequence("TIN", "transport_inward")
+        transport = TransportInward(
+            transport_number=transport_number,
+            po_id=po_id,
+            po_number=po.get("po_number"),
+            supplier_name=po.get("supplier_name"),
+            incoterm=incoterm,
+            source="OTHER"
+        )
+        await db.transport_inward.insert_one(transport.model_dump())
+        route_result["routed_to"] = "TRANSPORTATION_INWARD"
+        route_result["transport_number"] = transport_number
+    
+    # Update PO with routing info
+    await db.purchase_orders.update_one(
+        {"id": po_id},
+        {"$set": {
+            "routed_to": route_result["routed_to"],
+            "routed_at": datetime.now(timezone.utc).isoformat()
+        }}
+    )
+    
+    return route_result
+
+
+# ==================== MATERIAL SHORTAGE ENDPOINTS ====================
+
+@api_router.get("/material-shortages")
+async def get_material_shortages(status: Optional[str] = None, current_user: dict = Depends(get_current_user)):
+    """Get material shortages for RFQ creation"""
+    query = {}
+    if status:
+        query["status"] = status
+    shortages = await db.material_shortages.find(query, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    return shortages
+
+
+@api_router.put("/material-shortages/{shortage_id}/link-rfq")
+async def link_shortage_to_rfq(shortage_id: str, rfq_id: str, current_user: dict = Depends(get_current_user)):
+    """Link a material shortage to an RFQ"""
+    result = await db.material_shortages.update_one(
+        {"id": shortage_id},
+        {"$set": {"rfq_id": rfq_id, "status": "IN_RFQ"}}
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Shortage not found")
+    return {"success": True, "message": "Shortage linked to RFQ"}
+
+
 app.include_router(api_router)
 
 app.add_middleware(
