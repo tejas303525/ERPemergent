@@ -10,13 +10,14 @@ Build a comprehensive ERP system for a production plant manufacturing unit with:
 - Shipping (container booking), Transport (logistics), Documentation (export docs)
 - Finance and accounts
 - Inventory management with auto-add/deduct
+- **DRUMS-ONLY Production Scheduling** with capacity enforcement (600 drums/day)
 
 ## User Personas (11 Roles)
 1. **Admin** - Full system access
 2. **Sales** - Quotations, customers, products
-3. **Finance** - Quotation approval, payment tracking
-4. **Production** - Job orders, scheduling, BOM
-5. **Procurement** - Pending materials, supplier management
+3. **Finance** - Quotation approval, PO approval, payment tracking
+4. **Production** - Job orders, scheduling, BOM, drum schedule
+5. **Procurement** - Pending materials, supplier management, RFQ
 6. **Inventory** - Stock tracking, movements
 7. **Security** - GRN (goods receipt), Delivery Orders
 8. **QC** - Quality control, batch numbers, specifications
@@ -24,89 +25,98 @@ Build a comprehensive ERP system for a production plant manufacturing unit with:
 10. **Transport** - Container pickup scheduling
 11. **Documentation** - Export documents (invoices, packing lists, B/L)
 
-## Core Requirements
-- Multi-currency support (AED, USD, EUR)
-- Barcode/SKU tracking for inventory
-- Auto-add inventory on GRN, auto-deduct on Delivery Order
-- BOM (Bill of Materials) for production
-- Production scheduling based on material availability
-- Integrated dispatch workflow (Shipping → Transport → Documentation)
-- Single-stage quotation approval by Finance
+## What's Been Implemented
 
-## What's Been Implemented (Dec 28, 2025)
+### Phase 1: Inventory Status Discrepancy Fix ✅ (Dec 29, 2025)
+- `GET /api/inventory-items` now returns items with `status` field
+- Status calculated as: IN_STOCK (available > 0), INBOUND (only incoming POs), OUT_OF_STOCK
+- `GET /api/inventory-items/:id/availability` returns detailed breakdown:
+  - on_hand, reserved, available, inbound, inbound_details, reservations
+
+### Phase 3: SMTP Email Queue ✅ (Dec 29, 2025)
+- `POST /api/email/queue` - Queue emails for sending
+- `GET /api/email/outbox` - View email queue with SMTP status
+- `POST /api/email/process-queue` - Process queued emails (admin only)
+- Emails remain QUEUED when SMTP not configured (no mocking)
+- SMTP configuration via env: SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM
+
+### Phase 4: Auto Procurement from Shortages ✅ (Dec 29, 2025)
+- `POST /api/procurement/auto-generate` - Creates procurement requisition lines from schedule shortages
+- Automatically links to blocked schedule days
+- Creates PR with DRAFT status for procurement team review
+
+### Phase 5: RFQ Flow ✅ (Dec 29, 2025)
+- `POST /api/rfq` - Create RFQ for supplier
+- `GET /api/rfq` - List all RFQs
+- `PUT /api/rfq/:id/send` - Mark as SENT, queue email to supplier
+- `PUT /api/rfq/:id/quote` - Update with supplier prices
+- `POST /api/rfq/:id/convert-to-po` - Convert QUOTED RFQ to PO
+
+### Phase 6: Finance Approval ✅ (Dec 29, 2025)
+- `GET /api/purchase-orders/pending-approval` - POs awaiting finance approval
+- `PUT /api/purchase-orders/:id/finance-approve` - Finance approves PO
+- `PUT /api/purchase-orders/:id/finance-reject` - Finance rejects with reason
+- `PUT /api/purchase-orders/:id/send` - Send approved PO to supplier, queue email
+
+### Phase 7: Drum Scheduling (600/day) ✅ (Dec 28-29, 2025)
+- Weekly production schedule with 7-day view
+- 600 drums/day capacity enforcement
+- Campaign-based scheduling (groups same product/packaging)
+- Material availability checking (RAW + PACK)
+- Automatic blocking for material shortages
+- Integration with product_boms and packaging_boms
+
+### Frontend Pages Added (Dec 29, 2025)
+- `/procurement` - Procurement Management (RFQ, Requisitions)
+- `/finance-approval` - Finance PO Approval (pending, approved, email outbox)
+
+## Technical Architecture
 
 ### Backend (FastAPI + MongoDB)
-- ✅ JWT Authentication with 11 user roles
-- ✅ Customer CRUD operations
-- ✅ Product management with categories (raw_material, packaging, finished_product)
-- ✅ Quotation/PFI with line items, approval workflow
-- ✅ Sales Order (SPA) conversion from approved quotations
-- ✅ Payment recording and tracking
-- ✅ Job Orders with BOM and status management
-- ✅ GRN (Goods Received Notes) with auto-inventory add
-- ✅ Delivery Orders with auto-inventory deduct
-- ✅ Shipping Bookings with container management
-- ✅ Transport Schedules linked to shipping
-- ✅ Export Documents (invoice, packing list, B/L, COO)
-- ✅ QC Batches with specifications and test results
-- ✅ Inventory tracking with movement history
-- ✅ Dashboard with KPI stats
+- `/app/backend/server.py` - Main API endpoints
+- `/app/backend/production_scheduling.py` - Drum scheduling models and logic
 
 ### Frontend (React + Tailwind + Shadcn)
-- ✅ Dark industrial theme with sky blue accents
-- ✅ Role-based sidebar navigation
-- ✅ Dashboard with KPI cards and recent activity
-- ✅ All 14 pages fully functional:
-  - Dashboard, Quotations, Sales Orders, Job Orders
-  - Inventory, GRN, Delivery Orders
-  - Shipping, Transport, Documentation
-  - Quality Control, Customers, Products
+- `/app/frontend/src/pages/` - All page components
+- `/app/frontend/src/lib/api.js` - API client
+- `/app/frontend/src/components/ui/` - Shadcn components
 
-### Key Features Working
-- User registration with role selection
-- Create quotations with multiple items, incoterms, payment terms
-- Finance approval workflow for quotations
-- Convert approved quotations to sales orders
-- Record payments (LC, CAD, Cash, Bank Transfer)
-- Create job orders with BOM from sales orders
-- Production status tracking (pending → in_production → ready_for_dispatch)
-- GRN for incoming goods (auto-adds to inventory)
-- Delivery orders for outgoing goods (auto-deducts from inventory)
-- Container booking with CRO tracking
-- Transport scheduling linked to shipping cutoffs
-- Export document management
-- QC batch creation with pass/fail/hold status
+### Key Collections
+- `users`, `customers`, `products`
+- `quotations`, `sales_orders`, `payments`
+- `job_orders`, `job_order_items`
+- `inventory_items`, `inventory_balances`, `inventory_reservations`
+- `purchase_orders`, `purchase_order_lines`
+- `rfq`, `procurement_requisitions`, `procurement_requisition_lines`
+- `production_campaigns`, `production_schedule_days`
+- `email_outbox`
 
 ## Prioritized Backlog
 
-### P0 (Critical) - Done ✅
-- Authentication & role-based access
-- Complete quotation-to-dispatch workflow
-- Inventory management with auto-tracking
+### P0 (Critical) - COMPLETED ✅
+- All core ERP workflows
+- Phases 1-7 of drum scheduling enhancement
 
-### P1 (High Priority) - Next Phase
-- Blend reports for production
-- Automated production scheduling based on material availability
-- Email notifications for pending actions
-- Report generation (PDF exports)
-- Supplier management module
+### P1 (High Priority) - Next
+- **Phase 2**: Quantity & Packaging Rules (UOM, weight fields)
+- **Phase 8**: Incoterm-Based Logistics Routing
+- Blend report PDF generation improvements
+- Dashboard analytics charts
 
 ### P2 (Medium Priority) - Future
+- **Phase 9**: Security, QC, Payables, Receivables modules
 - Customer portal for order tracking
-- Mobile-responsive dashboard
-- Advanced analytics and charts
-- Audit trail for all operations
+- Mobile-responsive enhancements
+- Audit trail improvements
 - Barcode scanner integration
 
-### P3 (Nice to Have)
-- AI-powered demand forecasting
-- Integration with accounting software
-- Multi-warehouse support
-- EDI integration for shipping
+## Test Credentials
+- Admin: `admin@erp.com` / `admin123`
+- Sales: `sales@erp.com` / `sales123`
+- Finance: `finance@erp.com` / `finance123`
+- Production: `production@erp.com` / `production123`
 
-## Next Tasks
-1. Add blend report functionality for production
-2. Implement production scheduling algorithm (based on material availability)
-3. Add PDF generation for documents (PFI, Invoice, Packing List)
-4. Create supplier management module
-5. Add email notifications for workflow transitions
+## Notes
+- SMTP is intentionally NOT configured; emails remain QUEUED until SMTP env vars are set
+- All tests passing (15/15 backend, all frontend pages load correctly)
+- Test report: `/app/test_reports/iteration_1.json`
