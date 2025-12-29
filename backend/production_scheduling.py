@@ -169,14 +169,24 @@ class ProcurementRequisitionLine(ProcurementRequisitionLineCreate):
 
 class PurchaseOrderCreate(BaseModel):
     supplier_id: str
+    supplier_name: str = ""
+    currency: str = "USD"
+    total_amount: float = 0
+    rfq_id: Optional[str] = None
     notes: Optional[str] = None
 
 class PurchaseOrder(PurchaseOrderCreate):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     po_number: str = ""
-    status: str = "DRAFT"  # DRAFT, APPROVED, SENT, PARTIAL, RECEIVED
+    status: str = "DRAFT"  # DRAFT, APPROVED, SENT, PARTIAL, RECEIVED, REJECTED
+    created_by: str = ""
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    approved_by: Optional[str] = None
+    approved_at: Optional[str] = None
+    rejected_by: Optional[str] = None
+    rejected_at: Optional[str] = None
+    rejection_reason: Optional[str] = None
     sent_at: Optional[str] = None
     email_status: str = "NOT_CONFIGURED"  # NOT_CONFIGURED, QUEUED, SENT, FAILED
 
