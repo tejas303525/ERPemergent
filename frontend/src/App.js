@@ -29,6 +29,7 @@ import FinanceApprovalPage from './pages/FinanceApprovalPage';
 import PayablesPage from './pages/PayablesPage';
 import ReceivablesPage from './pages/ReceivablesPage';
 import LogisticsPage from './pages/LogisticsPage';
+import BOMManagementPage from './pages/BOMManagementPage';
 
 // Layout
 import MainLayout from './components/layout/MainLayout';
@@ -80,6 +81,7 @@ const AppRoutes = () => {
                 <Route path="/payables" element={<PayablesPage />} />
                 <Route path="/receivables" element={<ReceivablesPage />} />
                 <Route path="/logistics" element={<LogisticsPage />} />
+                <Route path="/bom-management" element={<BOMManagementPage />} />
                 <Route path="/users" element={<UsersPage />} />
               </Routes>
             </MainLayout>
