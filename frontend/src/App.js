@@ -33,6 +33,8 @@ import BOMManagementPage from './pages/BOMManagementPage';
 import TransportWindowPage from './pages/TransportWindowPage';
 import ImportWindowPage from './pages/ImportWindowPage';
 import UnifiedProductionSchedulePage from './pages/UnifiedProductionSchedulePage';
+import SecurityQCPage from './pages/SecurityQCPage';
+import QCInspectionPage from './pages/QCInspectionPage';
 
 // Layout
 import MainLayout from './components/layout/MainLayout';
@@ -87,6 +89,8 @@ const AppRoutes = () => {
                 <Route path="/receivables" element={<ReceivablesPage />} />
                 <Route path="/logistics" element={<LogisticsPage />} />
                 <Route path="/bom-management" element={<BOMManagementPage />} />
+                <Route path="/security" element={<SecurityQCPage />} />
+                <Route path="/qc-inspection" element={<QCInspectionPage />} />
                 <Route path="/users" element={<UsersPage />} />
               </Routes>
             </MainLayout>
