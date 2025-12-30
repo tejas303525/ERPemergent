@@ -20,7 +20,7 @@ sys.path.insert(0, '/app/frontend')
 from dotenv import load_dotenv
 load_dotenv('/app/frontend/.env')
 
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://smart-factory-29.preview.emergentagent.com').rstrip('/')
+BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://factory-erp-next.preview.emergentagent.com').rstrip('/')
 
 class TestPhase1Features:
     """Test Phase 1 Production Scheduling Features"""

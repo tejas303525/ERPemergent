@@ -1,176 +1,213 @@
 <analysis>**original_problem_statement:**
-The user wants to build a comprehensive ERP system for a manufacturing production plant. The system should manage the entire workflow from sales to dispatch.
+The user wants to build a full Manufacturing ERP system based on a detailed mermaid chart. After the successful completion of Phase 1, the user has provided a detailed list of bugs and improvements to be addressed in Phase 2, along with the requirement to build new QC and Security modules.
 
-**PRODUCT REQUIREMENTS (based on user feedback):**
-- **User Roles (11):** Admin/Sales, Finance, Production, Procurement, Dispatch, Shipping, Transport, Documentation, Security (for GRN/Delivery Orders), QC (for batch numbers/specs), and a shared Inventory view.
-- **Sales Flow:**
-    - Create quotations/Pro-forma Invoices (PFI) with customer details, product list, packaging, quantity, incoterms, payment terms, etc.
-    - Single-stage approval for quotations by the Finance/General Manager.
-- **Finance:**
-    - No payment gateway integration is needed.
-    - Supports multiple currencies: AED, USD, EUR.
-- **Inventory Management:**
-    - Barcode/SKU tracking.
-    - Inventory auto-deducts when Delivery Orders are issued.
-    - Inventory auto-adds when a Goods Received Note (GRN) is created for raw materials, packaging, or finished goods.
-- **Production Management:**
-    - Job orders should have statuses: Pending, In Production, Procurement, Ready for Dispatch.
-    - Generate a Bill of Materials (BOM) for each order.
-    - The system should create a production schedule based on material availability. If materials are not available, it should create a pending list for the procurement manager.
-- **Dispatch Workflow (Integrated):**
-    1.  **Shipping:** Manually books containers and enters Container Release Order (CRO) details into the system.
-    2.  **Transport:** The system automatically generates a transport schedule based on the CRO's cutoff dates, planning container pickup 3-4 days in advance.
-    3.  **Security/Dispatch:** Gets an automated program/view of incoming containers for loading, based on the transport schedule and linked job orders.
+**PRODUCT REQUIREMENTS (Phase 2):**
+1.  **Quotation Enhancements (Bug 1):**
+    *   **Export Orders:** Add fields for  (with specific capacity constraints), , configurable , and a configurable .
+    *   **Local Orders:** Add fields for , a , and include a .
+    *   All new fields must be reflected in the downloadable PDF.
+2.  **Quotation Approval Bug (Bug 2):** Fix the UI bug where approving a quotation shows a failed to approve message on the first click, even though it succeeds on refresh.
+3.  **Job Order Automation (Bug 3):**
+    *   On the Job Orders page, selecting a Sales Agreement (SPA) should auto-fill the , , and the product's Bill of Materials (BOM) from the BOM Management module.
+    *   The  status must be accurately calculated by checking real-time stock availability against the BOM components.
+4.  **Shipping & Transport Integration (Bug 4):**
+    *   Add , , , and  fields to the CRO (Container Release Order) details modal on the Shipping page.
+    *   Ensure that after a CRO is entered for a container booking (e.g., SHP-000003), the booking correctly appears in the Outward - Container tab of the Transportation page.
+5.  **Procurement Flow Rework (Bug 5):**
+    *   The procurement page should be changed from an RFQ (Request for Quotation) model to a Generate PO model.
+    *   The user should be able to select shortages, enter a , and generate a Purchase Order directly.
+    *   This newly generated PO must immediately appear on the Finance Approval page.
+    *   Fix a bug where selecting one job order in the shortages list selects multiple checkboxes.
+    *   Make vendors, billing companies, and shipping companies configurable with address autofill.
+    *   Clarify how material shortages are calculated.
+6.  **New Modules:** Create the Quality Control (QC) and Security modules as part of the overall workflow.
 
 **User's preferred language**: English
 
 **what currently exists?**
-A full-stack ERP application has been developed using FastAPI, React, and MongoDB. The initial version includes core modules for authentication, sales (quotations), production (job orders), inventory, and an integrated dispatch workflow (shipping, transport, security gate). It supports 11 distinct user roles. The backend APIs have been tested via curl, and the frontend pages have been created and visually verified with screenshots.
+A full-stack application with a FastAPI backend and a React frontend. The agent has successfully completed **Phase 1**, which included implementing a unified production schedule, material availability checks, incoterm-based logistics routing, and correcting the quotation calculation logic.
+
+The agent has already **begun implementing Phase 2** by overwriting frontend pages (, ) and updating backend models in  to accommodate the new requirements for quotations, shipping, and job orders.
 
 **Last working item**:
-- **Last item agent was working:** Implementing four new features requested by the user:
-    1. Email notifications on key events (using Resend).
-    2. A production scheduling algorithm.
-    3. PDF generation for quotations and blend reports (using WeasyPrint).
-    4. A page for Blend Reports.
-    The agent installed the required libraries (, ), added the Resend API key to the environment, and created the backend models and API endpoints in . It also created the frontend page for the production schedule. The agent was about to create the frontend page for Blend Reports.
-- **Status**: IN PROGRESS
-- **Agent Testing Done**: N
-- **Which testing method agent to use?** both
-- **User Testing Done**: N
+The agent was in the middle of a large, multi-part update to address all of the user's Phase 2 requirements. It had just made foundational changes to the frontend pages and backend models to support the new features and bug fixes.
+
+-   **Last item agent was working:** Updating the frontend and backend to support the Phase 2 requirements. The agent had just overwritten  and , and modified the , , and  Pydantic models in .
+-   **Status:** IN PROGRESS
+-   **Agent Testing Done:** N
+-   **Which testing method agent to use?** both
+-   **User Testing Done:** N
 
 **All Pending/In progress Issue list**:
--   **Issue 1 (P0):** Complete the implementation of the four new features (Email, Production Scheduling, PDF Generation, Blend Reports). This is the current active task and is incomplete.
+-   Issue 1: Quotation Page Enhancements (Container Types, Documents, VAT) (P0)
+-   Issue 2: Quotation Approval UI Bug (P0)
+-   Issue 3: Job Order Page Automation (Auto-fill from SPA, BOM check) (P0)
+-   Issue 4: Shipping/Transport Integration (CRO fields & container transport) (P0)
+-   Issue 5: Complete Rework of Procurement Page Flow (Generate PO, Finance Approval) (P0)
 
 **Issues Detail:**
--   **Issue 1:**
-    -   **Attempted fixes:** The backend code has been added to , and one of the two required frontend pages has been created. However, the features are not fully wired up or tested.
+-   **Issue 1: Quotation Page Enhancements (Bug 1)**
+    -   **Attempted fixes:** The agent overwrote  and updated the  model in  to include the new fields.
     -   **Next debug checklist:**
-        1.  Create the frontend page .
-        2.  Update  to add routes for  and .
-        3.  Update  to add navigation links to these new pages.
-        4.  Implement the UI on the Quotations page to trigger the  endpoint.
-        5.  Restart services and perform end-to-end testing for all four new features.
-    -   **Why fix this issue and what will be achieved with the fix?** This will complete the user's latest feature requests, adding critical functionality for notifications, production planning, and reporting.
+        1.  Verify the new fields render conditionally based on the order type (export/local) in .
+        2.  Ensure the backend saves the new fields correctly.
+        3.  Implement PDF generation logic to include these new fields.
+        4.  Implement a configuration mechanism (new admin pages or DB collections) for  and .
     -   **Status:** IN PROGRESS
     -   **Is recurring issue?** N
     -   **Should Test frontend/backend/both after fix?** both
-    -   **Blocked on other issue:** None
+
+-   **Issue 2: Quotation Approval UI Bug (Bug 2)**
+    -   **Attempted fixes:** The backend  endpoint was updated to return the full approved object.
+    -   **Next debug checklist:**
+        1.  In , review the state management within the approval function's  callback. The frontend state is not updating immediately after the API call.
+        2.  Ensure the local data state is updated with the response from the API to prevent the need for a page refresh.
+    -   **Status:** IN PROGRESS
+    -   **Is recurring issue?** N
+    -   **Should Test frontend/backend/both after fix?** frontend
+
+-   **Issue 3: Job Order Page Automation (Bug 3)**
+    -   **Attempted fixes:** The agent overwrote  and updated the  model in  to include .
+    -   **Next debug checklist:**
+        1.  In , implement the logic to fetch and auto-fill SPA details, product, quantity, and BOM when an SPA is selected.
+        2.  In , enhance the  endpoint to perform a real-time inventory check for all BOM items and set the  flag accordingly.
+    -   **Status:** IN PROGRESS
+    -   **Is recurring issue?** N
+    -   **Should Test frontend/backend/both after fix?** both
+
+-   **Issue 4: Shipping/Transport Integration (Bug 4)**
+    -   **Attempted fixes:** The agent updated  models in  and added logic to the CRO update endpoint to create a  record.
+    -   **Next debug checklist:**
+        1.  Update the CRO details modal in  to include the new input fields (, , etc.).
+        2.  Verify the  record is created correctly upon CRO update.
+        3.  Ensure the Outward - Container tab in  fetches and displays this data.
+    -   **Status:** IN PROGRESS
+    -   **Is recurring issue?** N
+    -   **Should Test frontend/backend/both after fix?** both
+
+-   **Issue 5: Complete Rework of Procurement Page Flow (Bug 5)**
+    -   **Attempted fixes:** The agent has viewed the relevant files but has not yet started modifications.
+    -   **Next debug checklist:**
+        1.  **UI/UX:** Redesign  to change the workflow from Create RFQ to Generate PO. The new flow must allow entering a .
+        2.  **Checkbox Bug:** Debug the state handling for the shortage selection list to fix the multi-select bug.
+        3.  **Backend:** Create a new endpoint (e.g., ) that accepts shortage items and prices, creates a PO with status , and returns it.
+        4.  **Integration:** Ensure the Finance Approval page immediately reflects these newly generated POs.
+        5.  **Configuration:** Create admin pages or a configuration mechanism for managing vendors and companies with address autofill.
+    -   **Status:** NOT STARTED
+    -   **Is recurring issue?** Y
+    -   **Should Test frontend/backend/both after fix?** both
 
 **In progress Task List**:
--   **Task 1 (P0):** Finalize New Feature Implementation
-    -   **Where to resume:** Create the file . The agent had just finished the  step to create this file.
-    -   **What will be achieved with this?** This will create the UI for the Blend Reports feature, a key part of the current implementation block.
+-   **Task 1: Complete Phase 2 Implementation (P0)**
+    -   **Where to resume:** Continue the implementation started by the previous agent. The immediate next steps are to update the  UI, followed by the major rework of the  flow, and finally building the new QC and Security modules.
+    -   **What will be achieved with this?** Resolution of all user-reported bugs and delivery of the core Phase 2 functionality.
     -   **Status:** IN PROGRESS
     -   **Should Test frontend/backend/both after fix?** both
-    -   **Blocked on something:** None
 
 **Upcoming and Future Tasks**
--   **Upcoming Tasks:**
-    -   (P1) Add navigation links for the new  and  to the sidebar and main app router.
-    -   (P1) Implement the frontend functionality to download PDFs for quotations and blend reports.
--   **Future Tasks:**
-    -   (P2) Integrate with external shipping line APIs (e.g., MSC, Maersk) to auto-update vessel positions and ETAs, as requested by the user.
-    -   (P2) Develop a customer-facing portal for them to track their order status.
+-   **Task 1: Implement QC Module (P1):** Create frontend pages and backend logic for managing quality control inspections.
+-   **Task 2: Implement Security Module (P1):** Create frontend pages and backend logic for managing security gate-in/gate-out checklists.
+-   **Task 3: PDF Generation (P1):** Implement PDF download functionality for Quotations and Purchase Orders, including all new custom fields.
+-   **Task 4: Admin Configuration Pages (P2):** Build UI for administrators to configure vendors, payment terms, and document checklists.
+-   **Task 5: Documentation Update (P2):** Update  to reflect all the new features and workflows from Phase 1 and Phase 2.
 
 **Completed work in this session**
-- **Initial ERP Scaffolding (DONE):**
-  - Set up a full-stack application with a FastAPI backend and React frontend.
-  - Implemented a robust authentication system supporting 11 distinct user roles.
-  - Created backend models and API endpoints for all core modules in .
-  - Created all initial frontend pages under .
-- **Integrated Dispatch Workflow (DONE):**
-  - Refactored the dispatch module to create a connected workflow between Shipping, Transport, and Security.
-  - Implemented logic where entering a Container Release Order (CRO) in the Shipping module automatically creates a transport schedule.
-  - Created a dedicated  for the security/gate team to view incoming container schedules.
-
-**Earlier issues found/mentioned but not fixed**
-- None.
-
-**Known issue recurrence from previous fork**
-- None.
+-   **PHASE 1 COMPLETE (Verified by User & Testing Agent):**
+    -   Unified Production Scheduling page and logic implemented.
+    -   Incoterm-based logistics routing (Transport, Shipping, Import windows).
+    -   Quotation approval now triggers material availability checks and auto-RFQ generation.
+    -   Fixed backend quotation total calculation to correctly use .
+-   **BOM Management Module:** Created a page and backend endpoints to manage Product and Packaging BOMs.
+-   **Core Pages Enhanced:** Improved the Inventory, Payables, and Receivables pages with more detailed views and correct status logic.
+-   **Bug Fixes:**
+    -   Resolved the recurring 520 error on the Auto-Generate PR endpoint.
+    -   Corrected the quotation calculation on the frontend to use metric tons.
 
 **Code Architecture**
 
 
 **Key Technical Concepts**
--   **Backend:** FastAPI, Pydantic for data validation, Motor for asynchronous MongoDB operations.
--   **Frontend:** React, Tailwind CSS, Shadcn/UI for components,  for icons,  for API requests.
--   **Database:** MongoDB.
--   **Architecture:** Monolithic backend () and a page-based component architecture on the frontend.
+-   **Frontend:** React, Axios, TailwindCSS, Shadcn/UI
+-   **Backend:** FastAPI, Pydantic, Motor (async MongoDB driver)
+-   **Database:** MongoDB
+-   **Authentication:** JWT
 
 **key DB schema**
--   : {email, hashed_password, role, name}
--   : {pfi_number, customer_id, items, total_price, status}
--   : {job_number, product_id, quantity, status}
--   : {cro_number, vessel_date, cutoff_date, pickup_date, status}
--   : {from_shipping_booking_id, pickup_date, status}
--   : {product_id, quantity, type: [grn, delivery_order]}
-
-**changes in tech stack**
--   None. The stack remains FastAPI, React, and MongoDB.
+-   : Stores sales quotations, including new fields for container types, VAT, and documents.
+-   : Production jobs, now includes  status and .
+-   : Manages shipping details, updated to include new CRO fields.
+-   , : Stores records for the transport window.
+-   , : Defines Bill of Materials for products.
+-   : Real-time stock levels for raw materials and packaging.
+-   : Procurement documents, will be central to the new Generate PO flow.
 
 **All files of reference**
--   : The single most important file, containing all backend logic, models, and API endpoints. It was heavily modified to add the integrated dispatch flow and stubs for the four new features.
--   : Updated to allow entering CRO details.
--   : Updated to display auto-generated schedules.
--   : A new page created for the security team.
--   : Modified to add the new route for the dispatch dashboard.
--   : Modified to add the new navigation link.
--   : Updated with new API functions for the dispatch flow and the new features.
--   : Newly created page for the production scheduling feature.
--   : Updated with .
--   : Updated with  and .
+-   **/app/backend/server.py**: Heavily modified file containing all business logic, models, and endpoints.
+-   **/app/frontend/src/pages/QuotationsPage.js**: Overwritten to begin Phase 2 enhancements.
+-   **/app/frontend/src/pages/JobOrdersPage.js**: Overwritten to begin Phase 2 automation.
+-   **/app/frontend/src/pages/ShippingPage.js**: Needs to be updated for new CRO fields.
+-   **/app/frontend/src/pages/ProcurementPage.js**: Needs a complete rework.
+-   **/app/frontend/src/pages/TransportWindowPage.js**: Created in Phase 1, needs to be verified for container booking integration.
+-   **/app/frontend/src/pages/UnifiedProductionSchedulePage.js**: Created and completed in Phase 1.
+-   **/app/memory/PRD.md**: Updated with Phase 1 completion and new Phase 2 requirements.
 
 **Areas that need refactoring**
--   The  file is over 1200 lines long and contains all models, routes, and business logic. It should be refactored into a more modular structure, with separate files for different routers (e.g., , ) and models (). This will improve maintainability and scalability.
+-   **/app/frontend/src/pages/ProcurementPage.js**: Requires a complete rewrite of its core logic and UI to align with the new Generate PO workflow.
+-   **/app/backend/server.py**: The file is over 5000 lines long and contains almost all application logic. Future work should prioritize separating logic into routers/modules (e.g., , ).
 
 **key api endpoints**
--   , 
--   , , 
--   
--    (Triggers transport schedule creation and email notifications)
--   
--   
--   
--   
+-   : Logic here triggers material availability checks. The response needs to be handled correctly on the frontend.
+-   : Logic here needs to be updated to auto-check BOM availability.
+-   : This endpoint now creates  records.
+-   : Provides data for the new unified scheduling page.
+-   , : Provide data for the transport window tabs.
 
 **Critical Info for New Agent**
-- The current task is to complete the four new features requested by the user. The backend logic is partially in place in , but the frontend needs to be completed and everything needs to be tested.
-- The  file is monolithic and very large. Be prepared to use search and view tools extensively to navigate it.
-- A  has been provided by the user and is stored in .
-- The user is very specific about workflows. Ensure the implementation of the new features aligns with the detailed requirements provided.
+-   You are starting **Phase 2**. The user has provided a very detailed list of 5 bug fixes/improvements and 2 new modules. You must address all points.
+-   The previous agent has already started the work by modifying models in  and overwriting  and . You must continue from this point.
+-   The **Procurement Flow Rework (Issue 5)** is the most significant change. The user wants to move away from the RFQ process to a direct Generate PO flow. This will require significant changes to both the frontend and backend.
+-   Carefully review the requirements for the Quotation and Job Order pages, as they involve conditional UI, data auto-filling, and real-time inventory checks.
 
 **documents and test reports created in this job**
 -   
 -   
+-   
 
 **Last 10 User Messages and any pending HUMAN messages**
-1.  **User Message:** The user confirmed the dispatch workflow logic was incorrect and provided a detailed, corrected 3-step process: 1. Shipping enters CRO. 2. System auto-schedules Transport based on CRO cutoff dates. 3. Security gets a view of incoming trucks. (COMPLETED - Agent implemented this fix).
-2.  **User Message:** The user requested four new features: 1. Email notifications. 2. Production scheduling algorithm. 3. PDF generation. 4. Blend reports. (IN PROGRESS).
-3.  **User Message:** The user provided the API key for Resend (). (COMPLETED - Agent has stored the key).
+1.  **User:** Requests fix for incorrect quotation calculation.
+2.  **Agent:** Fixes quotation calculation on both frontend and backend.
+3.  **Agent:** Verifies fix with screenshots and a test script.
+4.  **Agent:** Implements Phase 1 (Production Scheduling, Transport/Import Windows, and Incoterm routing).
+5.  **Agent:** Verifies Phase 1 implementation with screenshots and a testing agent run.
+6.  **Agent:** Discovers and fixes a critical backend quotation calculation bug found by the testing agent.
+7.  **Agent:** Verifies the bug fix with a test script.
+8.  **Agent:** Submits the final report for Phase 1.
+9.  **User:** Approves Phase 1 and provides a detailed list of 5 bugs/improvements and requirements for Phase 2 (QC/Security modules).
+10. **Agent:** Acknowledges Phase 2, analyzes the codebase, and begins implementation by updating , , and backend models in .
 
 **Project Health Check:**
--   **Broken:** The four new features (email, scheduling, PDF, blend reports) are incomplete and therefore not functional.
--   **Mocked:** None.
+-   **Broken:**
+    -   Procurement workflow ().
+    -   Quotation approval UI feedback.
+    -   Job Order creation (lacks automation).
+    -   Shipping to Transport page data flow.
+-   **Mocked:**
+    -   QC and Security modules do not exist yet.
 
 **3rd Party Integrations**
--   **Resend:** Used for sending email notifications. Requires a User API Key (which has been provided).
--   **WeasyPrint:** A Python library for generating PDFs from HTML/CSS. It is installed via pip and does not require an API key.
+-   **SMTP (via environment variables):** Implemented for an  queue. Not yet fully integrated into workflows like sending POs to vendors.
 
 **Testing status**
--   **Testing agent used after significant changes:** NO. The agent relied on  tests for the backend and  tool for the frontend after the initial build. This is against the specified workflow in the system prompt.
--   **Troubleshoot agent used after agent stuck in loop:** NO
--   **Test files created:** []
--   **Known regressions:** []
+-   **Testing agent used after significant changes:** YES. The agent ran the testing agent to validate the Phase 1 implementation, which successfully identified a critical bug.
+-   **Test files created:** , .
+-   **Known regressions:** None from the last stable point, but the current work is in an incomplete, in-progress state.
 
 **Credentials to test flow:**
--   **Role:** Admin
--   **Email:** 
--   **Password:** 
+-   **Admin:**  / 
+-   **Finance:**  / 
 
 **What agent forgot to execute**
--   The agent did not create the  file, which was the next planned step.
--   The agent did not update  and  to add routes and navigation for the new  and the upcoming .
--   The agent did not implement the frontend UI for triggering PDF downloads on the quotations page.
--   Crucially, the agent did not use the  after the initial large-scale implementation, opting for manual  and  checks instead. The system prompt mandates using the testing agent for feature completion.</analysis>
+The previous agent correctly planned to address all user requests for Phase 2 but was in the middle of implementation when the session ended. The following key parts have been started but are not yet complete:
+-   Updating the UI of  to include the new CRO fields.
+-   The complete rework of  and its backend logic.
+-   The creation of the new QC and Security modules.</analysis>
