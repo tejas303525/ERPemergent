@@ -12,7 +12,7 @@ import { Textarea } from '../components/ui/textarea';
 import { Checkbox } from '../components/ui/checkbox';
 import { toast } from 'sonner';
 import { formatCurrency, formatDate, getStatusColor, cn } from '../lib/utils';
-import { Plus, FileText, Check, X, Eye, Trash2, Download, Globe, MapPin, Ship } from 'lucide-react';
+import { Plus, FileText, Check, X, Eye, Trash2, Download, Globe, MapPin, Ship, AlertTriangle } from 'lucide-react';
 
 const CURRENCIES = ['USD', 'AED', 'EUR', 'INR'];
 const ORDER_TYPES = ['local', 'export'];
