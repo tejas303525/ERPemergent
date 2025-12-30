@@ -1872,9 +1872,9 @@ class ProductionScheduleItem(BaseModel):
 @api_router.get("/production/schedule")
 async def get_production_schedule(current_user: dict = Depends(get_current_user)):
     """Get production schedule based on material availability"""
-    # Get all pending job orders
+    # Get all pending, procurement, and in_production job orders
     pending_jobs = await db.job_orders.find(
-        {"status": {"$in": ["pending", "procurement"]}},
+        {"status": {"$in": ["pending", "procurement", "in_production", "approved"]}},
         {"_id": 0}
     ).sort([("priority", -1), ("created_at", 1)]).to_list(1000)
     
