@@ -31,6 +31,7 @@ This ERP system manages the complete production workflow for a manufacturing pla
 
 ### Role Permissions
 - **Admin**: Full access to all modules
+- ***OPS***: Create ops window fpr job order creation.
 - **Sales**: Quotations, Sales Orders, Customers
 - **Finance**: PO Approval, Payables, Receivables, GRN Review
 - **Production**: Job Orders, Drum Schedule, Blend Reports
