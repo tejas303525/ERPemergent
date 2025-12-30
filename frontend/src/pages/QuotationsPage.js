@@ -193,6 +193,15 @@ export default function QuotationsPage() {
   const grandTotal = subtotal + vatAmount;
   const totalWeightMT = form.items.reduce((sum, i) => sum + (i.weight_mt || i.quantity), 0);
 
+  // Get max cargo capacity based on container type
+  const getMaxContainerCapacity = () => {
+    const container = CONTAINER_TYPES.find(c => c.value === form.container_type);
+    return container ? container.max_mt * form.container_count : Infinity;
+  };
+
+  const maxCargoCapacity = getMaxContainerCapacity();
+  const isOverweight = form.order_type === 'export' && form.container_type && totalWeightMT > maxCargoCapacity;
+
   const handleCreate = async () => {
     if (!form.customer_id || form.items.length === 0) {
       toast.error('Please select customer and add items');
@@ -200,6 +209,15 @@ export default function QuotationsPage() {
     }
     if (form.order_type === 'export' && !form.container_type) {
       toast.error('Please select container type for export orders');
+      return;
+    }
+    if (form.order_type === 'export' && !form.container_count) {
+      toast.error('Please enter number of containers');
+      return;
+    }
+    // Check max cargo exceeded
+    if (isOverweight) {
+      toast.error(`Max cargo exceeded! Total weight (${totalWeightMT.toFixed(2)} MT) exceeds container capacity (${maxCargoCapacity} MT). Please increase container count.`);
       return;
     }
     try {
