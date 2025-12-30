@@ -6584,7 +6584,39 @@ async def update_import_documents(import_id: str, documents: dict, current_user:
     
     return await db.imports.find_one({"id": import_id}, {"_id": 0})
 
-@api_router.put("/imports/{import_id}/move-to-transport")
+@api_router.put("/imports/{import_id}/document")
+async def update_single_import_document(import_id: str, data: dict, current_user: dict = Depends(get_current_user)):
+    """Update a single import document in checklist"""
+    doc_key = data.get("document_key")
+    checked = data.get("checked", False)
+    
+    imp = await db.imports.find_one({"id": import_id}, {"_id": 0})
+    if not imp:
+        raise HTTPException(status_code=404, detail="Import not found")
+    
+    checklist = imp.get("document_checklist", {})
+    checklist[doc_key] = checked
+    
+    await db.imports.update_one(
+        {"id": import_id},
+        {"$set": {"document_checklist": checklist}}
+    )
+    
+    return await db.imports.find_one({"id": import_id}, {"_id": 0})
+
+@api_router.put("/imports/{import_id}/status")
+async def update_import_status(import_id: str, status: str, current_user: dict = Depends(get_current_user)):
+    """Update import status"""
+    result = await db.imports.update_one(
+        {"id": import_id},
+        {"$set": {"status": status}}
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Import not found")
+    
+    return await db.imports.find_one({"id": import_id}, {"_id": 0})
+
+@api_router.post("/imports/{import_id}/move-to-transport")
 async def move_import_to_transport(import_id: str, current_user: dict = Depends(get_current_user)):
     """Move import to transport window (Inward Import/Logistics)"""
     
