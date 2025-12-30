@@ -5349,6 +5349,591 @@ async def link_shortage_to_rfq(shortage_id: str, rfq_id: str, current_user: dict
     return {"success": True, "message": "Shortage linked to RFQ"}
 
 
+# ==================== PHASE 2: QC & SECURITY MODULE ====================
+
+# Security Checklist Models
+class SecurityChecklistCreate(BaseModel):
+    ref_type: str  # INWARD, OUTWARD
+    ref_id: str  # transport_inward_id or job_order_id
+    ref_number: str
+    checklist_type: str  # INWARD or OUTWARD
+    vehicle_number: Optional[str] = None
+    driver_name: Optional[str] = None
+    driver_license: Optional[str] = None
+    seal_number: Optional[str] = None
+    gross_weight: Optional[float] = None
+    tare_weight: Optional[float] = None
+    net_weight: Optional[float] = None
+    notes: Optional[str] = None
+
+class SecurityChecklistUpdate(BaseModel):
+    vehicle_number: Optional[str] = None
+    driver_name: Optional[str] = None
+    driver_license: Optional[str] = None
+    seal_number: Optional[str] = None
+    gross_weight: Optional[float] = None
+    tare_weight: Optional[float] = None
+    net_weight: Optional[float] = None
+    container_number: Optional[str] = None
+    checklist_items: Optional[Dict[str, bool]] = None
+    notes: Optional[str] = None
+    status: Optional[str] = None
+
+# QC Inspection Models
+class QCInspectionCreate(BaseModel):
+    ref_type: str  # INWARD, OUTWARD
+    ref_id: str
+    ref_number: str
+    product_id: Optional[str] = None
+    product_name: Optional[str] = None
+    batch_number: Optional[str] = None
+
+class QCInspectionUpdate(BaseModel):
+    batch_number: Optional[str] = None
+    test_results: Optional[Dict[str, Any]] = None
+    specifications: Optional[Dict[str, Any]] = None
+    passed: Optional[bool] = None
+    coa_generated: Optional[bool] = None
+    coa_number: Optional[str] = None
+    inspector_notes: Optional[str] = None
+    status: Optional[str] = None
+
+# ==================== SECURITY ENDPOINTS ====================
+
+@api_router.get("/security/dashboard")
+async def get_security_dashboard(current_user: dict = Depends(get_current_user)):
+    """Get security dashboard with 3 windows: Inward, Outward, and RFQ status"""
+    
+    # Inward transport pending security check
+    inward_pending = await db.transport_inward.find(
+        {"status": {"$in": ["PENDING", "IN_TRANSIT", "ARRIVED"]}},
+        {"_id": 0}
+    ).sort("created_at", -1).to_list(100)
+    
+    # Outward dispatch pending security check
+    outward_pending = await db.transport_outward.find(
+        {"status": {"$in": ["PENDING", "LOADING"]}},
+        {"_id": 0}
+    ).sort("created_at", -1).to_list(100)
+    
+    # Security checklists
+    checklists = await db.security_checklists.find(
+        {"status": {"$in": ["PENDING", "IN_PROGRESS"]}},
+        {"_id": 0}
+    ).sort("created_at", -1).to_list(100)
+    
+    return {
+        "inward_pending": inward_pending,
+        "outward_pending": outward_pending,
+        "checklists": checklists,
+        "stats": {
+            "inward_count": len(inward_pending),
+            "outward_count": len(outward_pending),
+            "pending_checklists": len(checklists)
+        }
+    }
+
+@api_router.get("/security/inward")
+async def get_security_inward(status: Optional[str] = None, current_user: dict = Depends(get_current_user)):
+    """Get inward transports for security check"""
+    query = {}
+    if status:
+        query["status"] = status
+    
+    inward = await db.transport_inward.find(query, {"_id": 0}).sort("created_at", -1).to_list(100)
+    
+    # Enrich with security checklist status
+    for transport in inward:
+        checklist = await db.security_checklists.find_one({
+            "ref_type": "INWARD",
+            "ref_id": transport["id"]
+        }, {"_id": 0})
+        transport["security_checklist"] = checklist
+    
+    return inward
+
+@api_router.get("/security/outward")
+async def get_security_outward(status: Optional[str] = None, current_user: dict = Depends(get_current_user)):
+    """Get outward transports for security check"""
+    query = {}
+    if status:
+        query["status"] = status
+    
+    outward = await db.transport_outward.find(query, {"_id": 0}).sort("created_at", -1).to_list(100)
+    
+    # Enrich with security checklist status
+    for transport in outward:
+        checklist = await db.security_checklists.find_one({
+            "ref_type": "OUTWARD",
+            "ref_id": transport["id"]
+        }, {"_id": 0})
+        transport["security_checklist"] = checklist
+    
+    return outward
+
+@api_router.post("/security/checklists")
+async def create_security_checklist(data: SecurityChecklistCreate, current_user: dict = Depends(get_current_user)):
+    """Create a security checklist for inward or outward transport"""
+    if current_user["role"] not in ["admin", "security"]:
+        raise HTTPException(status_code=403, detail="Only security can create checklists")
+    
+    checklist_number = await generate_sequence("SEC", "security_checklists")
+    
+    checklist = {
+        "id": str(uuid.uuid4()),
+        "checklist_number": checklist_number,
+        **data.model_dump(),
+        "checklist_items": {
+            "vehicle_inspected": False,
+            "driver_verified": False,
+            "seal_checked": False,
+            "documents_verified": False,
+            "weight_recorded": False
+        },
+        "status": "IN_PROGRESS",
+        "created_by": current_user["id"],
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    
+    await db.security_checklists.insert_one(checklist)
+    return checklist
+
+@api_router.put("/security/checklists/{checklist_id}")
+async def update_security_checklist(checklist_id: str, data: SecurityChecklistUpdate, current_user: dict = Depends(get_current_user)):
+    """Update security checklist with weighment and details"""
+    if current_user["role"] not in ["admin", "security"]:
+        raise HTTPException(status_code=403, detail="Only security can update checklists")
+    
+    update_data = {k: v for k, v in data.model_dump().items() if v is not None}
+    
+    # Calculate net weight if gross and tare provided
+    if data.gross_weight and data.tare_weight:
+        update_data["net_weight"] = data.gross_weight - data.tare_weight
+    
+    result = await db.security_checklists.update_one(
+        {"id": checklist_id},
+        {"$set": update_data}
+    )
+    
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Checklist not found")
+    
+    return await db.security_checklists.find_one({"id": checklist_id}, {"_id": 0})
+
+@api_router.put("/security/checklists/{checklist_id}/complete")
+async def complete_security_checklist(checklist_id: str, current_user: dict = Depends(get_current_user)):
+    """
+    Complete security checklist and route to QC.
+    For INWARD: Creates QC inspection and routes to GRN after QC pass.
+    For OUTWARD: Creates QC inspection and generates Delivery Order after QC pass.
+    """
+    if current_user["role"] not in ["admin", "security"]:
+        raise HTTPException(status_code=403, detail="Only security can complete checklists")
+    
+    checklist = await db.security_checklists.find_one({"id": checklist_id}, {"_id": 0})
+    if not checklist:
+        raise HTTPException(status_code=404, detail="Checklist not found")
+    
+    if not checklist.get("net_weight"):
+        raise HTTPException(status_code=400, detail="Please record weighment before completing")
+    
+    # Mark checklist as completed
+    await db.security_checklists.update_one(
+        {"id": checklist_id},
+        {"$set": {
+            "status": "COMPLETED",
+            "completed_by": current_user["id"],
+            "completed_at": datetime.now(timezone.utc).isoformat()
+        }}
+    )
+    
+    # Create QC inspection
+    qc_number = await generate_sequence("QC", "qc_inspections")
+    qc_inspection = {
+        "id": str(uuid.uuid4()),
+        "qc_number": qc_number,
+        "ref_type": checklist["checklist_type"],
+        "ref_id": checklist["ref_id"],
+        "ref_number": checklist["ref_number"],
+        "security_checklist_id": checklist_id,
+        "net_weight": checklist.get("net_weight"),
+        "status": "PENDING",
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    await db.qc_inspections.insert_one(qc_inspection)
+    
+    # Notify QC
+    await create_notification(
+        event_type="QC_INSPECTION_REQUIRED",
+        title=f"QC Inspection Required: {qc_number}",
+        message=f"{checklist['checklist_type']} cargo requires QC inspection",
+        link="/qc",
+        ref_type="QC_INSPECTION",
+        ref_id=qc_inspection["id"],
+        target_roles=["admin", "qc"],
+        notification_type="warning"
+    )
+    
+    return {
+        "success": True,
+        "message": "Security checklist completed. Sent to QC for inspection.",
+        "qc_number": qc_number
+    }
+
+# ==================== QC ENDPOINTS ====================
+
+@api_router.get("/qc/dashboard")
+async def get_qc_dashboard(current_user: dict = Depends(get_current_user)):
+    """Get QC dashboard with pending inspections"""
+    
+    # Pending inspections
+    pending = await db.qc_inspections.find(
+        {"status": {"$in": ["PENDING", "IN_PROGRESS"]}},
+        {"_id": 0}
+    ).sort("created_at", -1).to_list(100)
+    
+    # Completed today
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    completed_today = await db.qc_inspections.find(
+        {"status": "PASSED", "completed_at": {"$regex": f"^{today}"}},
+        {"_id": 0}
+    ).to_list(100)
+    
+    # COAs generated
+    coas = await db.qc_inspections.find(
+        {"coa_generated": True},
+        {"_id": 0}
+    ).sort("coa_generated_at", -1).to_list(50)
+    
+    return {
+        "pending_inspections": pending,
+        "completed_today": completed_today,
+        "recent_coas": coas,
+        "stats": {
+            "pending_count": len(pending),
+            "completed_today_count": len(completed_today),
+            "coas_generated": len(coas)
+        }
+    }
+
+@api_router.get("/qc/inspections")
+async def get_qc_inspections(status: Optional[str] = None, ref_type: Optional[str] = None, current_user: dict = Depends(get_current_user)):
+    """Get QC inspections"""
+    query = {}
+    if status:
+        query["status"] = status
+    if ref_type:
+        query["ref_type"] = ref_type
+    
+    inspections = await db.qc_inspections.find(query, {"_id": 0}).sort("created_at", -1).to_list(100)
+    return inspections
+
+@api_router.put("/qc/inspections/{inspection_id}")
+async def update_qc_inspection(inspection_id: str, data: QCInspectionUpdate, current_user: dict = Depends(get_current_user)):
+    """Update QC inspection with test results"""
+    if current_user["role"] not in ["admin", "qc"]:
+        raise HTTPException(status_code=403, detail="Only QC can update inspections")
+    
+    update_data = {k: v for k, v in data.model_dump().items() if v is not None}
+    
+    result = await db.qc_inspections.update_one(
+        {"id": inspection_id},
+        {"$set": update_data}
+    )
+    
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Inspection not found")
+    
+    return await db.qc_inspections.find_one({"id": inspection_id}, {"_id": 0})
+
+@api_router.put("/qc/inspections/{inspection_id}/pass")
+async def pass_qc_inspection(inspection_id: str, current_user: dict = Depends(get_current_user)):
+    """
+    Pass QC inspection and trigger next steps:
+    - INWARD: Create GRN and update stock, notify payables
+    - OUTWARD: Generate Delivery Order and documents, notify receivables
+    """
+    if current_user["role"] not in ["admin", "qc"]:
+        raise HTTPException(status_code=403, detail="Only QC can pass inspections")
+    
+    inspection = await db.qc_inspections.find_one({"id": inspection_id}, {"_id": 0})
+    if not inspection:
+        raise HTTPException(status_code=404, detail="Inspection not found")
+    
+    # Update inspection status
+    await db.qc_inspections.update_one(
+        {"id": inspection_id},
+        {"$set": {
+            "status": "PASSED",
+            "passed": True,
+            "completed_by": current_user["id"],
+            "completed_at": datetime.now(timezone.utc).isoformat()
+        }}
+    )
+    
+    result_message = ""
+    
+    if inspection["ref_type"] == "INWARD":
+        # Create GRN and update stock
+        grn_result = await create_grn_from_qc(inspection, current_user)
+        result_message = f"GRN {grn_result['grn_number']} created. Stock updated. Payables notified."
+        
+    elif inspection["ref_type"] == "OUTWARD":
+        # Generate Delivery Order and documents
+        do_result = await create_do_from_qc(inspection, current_user)
+        result_message = f"Delivery Order {do_result['do_number']} created. Receivables notified."
+    
+    return {
+        "success": True,
+        "message": f"QC Passed. {result_message}"
+    }
+
+@api_router.put("/qc/inspections/{inspection_id}/fail")
+async def fail_qc_inspection(inspection_id: str, reason: str = "", current_user: dict = Depends(get_current_user)):
+    """Fail QC inspection"""
+    if current_user["role"] not in ["admin", "qc"]:
+        raise HTTPException(status_code=403, detail="Only QC can fail inspections")
+    
+    await db.qc_inspections.update_one(
+        {"id": inspection_id},
+        {"$set": {
+            "status": "FAILED",
+            "passed": False,
+            "fail_reason": reason,
+            "completed_by": current_user["id"],
+            "completed_at": datetime.now(timezone.utc).isoformat()
+        }}
+    )
+    
+    return {"success": True, "message": "QC Failed. Material on hold."}
+
+@api_router.post("/qc/inspections/{inspection_id}/generate-coa")
+async def generate_coa(inspection_id: str, current_user: dict = Depends(get_current_user)):
+    """Generate Certificate of Analysis for outward shipment"""
+    if current_user["role"] not in ["admin", "qc"]:
+        raise HTTPException(status_code=403, detail="Only QC can generate COA")
+    
+    inspection = await db.qc_inspections.find_one({"id": inspection_id}, {"_id": 0})
+    if not inspection:
+        raise HTTPException(status_code=404, detail="Inspection not found")
+    
+    if not inspection.get("passed"):
+        raise HTTPException(status_code=400, detail="Cannot generate COA for failed inspection")
+    
+    coa_number = await generate_sequence("COA", "coas")
+    
+    await db.qc_inspections.update_one(
+        {"id": inspection_id},
+        {"$set": {
+            "coa_generated": True,
+            "coa_number": coa_number,
+            "coa_generated_by": current_user["id"],
+            "coa_generated_at": datetime.now(timezone.utc).isoformat()
+        }}
+    )
+    
+    return {"success": True, "coa_number": coa_number}
+
+# Helper function to create GRN from QC pass (Inward flow)
+async def create_grn_from_qc(inspection: dict, current_user: dict):
+    """Create GRN after QC pass for inward materials"""
+    
+    # Get transport inward details
+    transport = await db.transport_inward.find_one({"id": inspection["ref_id"]}, {"_id": 0})
+    if not transport:
+        return {"grn_number": "N/A", "error": "Transport not found"}
+    
+    # Get PO lines to create GRN items
+    po_id = transport.get("po_id")
+    po_lines = []
+    if po_id:
+        po_lines = await db.purchase_order_lines.find({"po_id": po_id}, {"_id": 0}).to_list(100)
+    
+    grn_number = await generate_sequence("GRN", "grn")
+    
+    grn_items = []
+    for line in po_lines:
+        item = await db.inventory_items.find_one({"id": line.get("item_id")}, {"_id": 0})
+        grn_items.append({
+            "product_id": line.get("item_id"),
+            "product_name": line.get("item_name") or (item.get("name") if item else "Unknown"),
+            "sku": item.get("sku") if item else "-",
+            "quantity": line.get("qty", 0),
+            "unit": line.get("uom", "KG")
+        })
+    
+    grn = {
+        "id": str(uuid.uuid4()),
+        "grn_number": grn_number,
+        "supplier": transport.get("supplier_name", "Unknown"),
+        "items": grn_items,
+        "received_by": current_user["id"],
+        "received_at": datetime.now(timezone.utc).isoformat(),
+        "review_status": "PENDING_PAYABLES",
+        "po_id": po_id,
+        "qc_inspection_id": inspection["id"],
+        "net_weight": inspection.get("net_weight")
+    }
+    await db.grn.insert_one(grn)
+    
+    # Update inventory balances
+    for item in grn_items:
+        await db.inventory_balances.update_one(
+            {"item_id": item["product_id"]},
+            {"$inc": {"on_hand": item["quantity"]}},
+            upsert=True
+        )
+    
+    # Update transport status
+    await db.transport_inward.update_one(
+        {"id": transport["id"]},
+        {"$set": {"status": "COMPLETED", "grn_number": grn_number}}
+    )
+    
+    # Notify Payables
+    await create_notification(
+        event_type="GRN_PAYABLES_REVIEW",
+        title=f"GRN Pending Review: {grn_number}",
+        message=f"GRN from {transport.get('supplier_name')} requires payables review",
+        link="/payables",
+        ref_type="GRN",
+        ref_id=grn["id"],
+        target_roles=["admin", "finance"],
+        notification_type="warning"
+    )
+    
+    return {"grn_number": grn_number, "grn_id": grn["id"]}
+
+# Helper function to create DO from QC pass (Outward flow)
+async def create_do_from_qc(inspection: dict, current_user: dict):
+    """Create Delivery Order after QC pass for outward dispatch"""
+    
+    # Get transport outward details
+    transport = await db.transport_outward.find_one({"id": inspection["ref_id"]}, {"_id": 0})
+    if not transport:
+        # Try to find job order directly
+        job = await db.job_orders.find_one({"id": inspection.get("ref_id")}, {"_id": 0})
+        if not job:
+            return {"do_number": "N/A", "error": "Job/Transport not found"}
+        transport = {"job_order_id": job["id"], "customer_name": ""}
+    
+    do_number = await generate_sequence("DO", "delivery_orders")
+    
+    # Get job details
+    job_id = transport.get("job_order_id") or inspection.get("ref_id")
+    job = await db.job_orders.find_one({"id": job_id}, {"_id": 0})
+    
+    # Get customer info from sales order
+    customer_name = transport.get("customer_name", "")
+    customer_type = "local"
+    if job:
+        so = await db.sales_orders.find_one({"id": job.get("sales_order_id")}, {"_id": 0})
+        if so:
+            customer_name = so.get("customer_name", customer_name)
+            quotation = await db.quotations.find_one({"id": so.get("quotation_id")}, {"_id": 0})
+            if quotation:
+                customer_type = quotation.get("order_type", "local")
+    
+    delivery_order = {
+        "id": str(uuid.uuid4()),
+        "do_number": do_number,
+        "job_order_id": job_id,
+        "job_number": job.get("job_number") if job else "-",
+        "product_name": job.get("product_name") if job else "-",
+        "quantity": job.get("quantity", 0) if job else 0,
+        "customer_name": customer_name,
+        "customer_type": customer_type,
+        "qc_inspection_id": inspection["id"],
+        "net_weight": inspection.get("net_weight"),
+        "issued_by": current_user["id"],
+        "issued_at": datetime.now(timezone.utc).isoformat()
+    }
+    await db.delivery_orders.insert_one(delivery_order)
+    
+    # Update job status
+    if job:
+        await db.job_orders.update_one(
+            {"id": job_id},
+            {"$set": {"status": "dispatched"}}
+        )
+        
+        # Deduct from inventory
+        product = await db.products.find_one({"id": job.get("product_id")}, {"_id": 0})
+        if product:
+            new_stock = max(0, product.get("current_stock", 0) - job.get("quantity", 0))
+            await db.products.update_one(
+                {"id": job.get("product_id")},
+                {"$set": {"current_stock": new_stock}}
+            )
+    
+    # Update transport status
+    if transport.get("id"):
+        await db.transport_outward.update_one(
+            {"id": transport["id"]},
+            {"$set": {"status": "DISPATCHED", "do_number": do_number}}
+        )
+    
+    # Notify Receivables (different invoice type based on customer)
+    invoice_type = "Tax Invoice" if customer_type == "local" else "Commercial Invoice"
+    await create_notification(
+        event_type="DO_RECEIVABLES_INVOICE",
+        title=f"Create {invoice_type}: {do_number}",
+        message=f"Delivery Order {do_number} for {customer_name} requires {invoice_type}",
+        link="/receivables",
+        ref_type="DO",
+        ref_id=delivery_order["id"],
+        target_roles=["admin", "finance"],
+        notification_type="info"
+    )
+    
+    return {"do_number": do_number, "do_id": delivery_order["id"], "invoice_type": invoice_type}
+
+# ==================== EXPORT DOCUMENTS GENERATION ====================
+
+@api_router.get("/documents/export/{job_id}")
+async def get_export_documents_status(job_id: str, current_user: dict = Depends(get_current_user)):
+    """Get status of export documents for a job (Packing List, COO, BL Draft, COA)"""
+    
+    job = await db.job_orders.find_one({"id": job_id}, {"_id": 0})
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    
+    # Get QC inspection and COA status
+    qc = await db.qc_inspections.find_one({
+        "ref_type": "OUTWARD",
+        "ref_id": job_id
+    }, {"_id": 0})
+    
+    # Get sales order and quotation for export check
+    so = await db.sales_orders.find_one({"id": job.get("sales_order_id")}, {"_id": 0})
+    quotation = await db.quotations.find_one({"id": so.get("quotation_id") if so else None}, {"_id": 0})
+    
+    is_export = quotation.get("order_type") == "export" if quotation else False
+    
+    documents = {
+        "delivery_order": {"status": "PENDING", "number": None},
+        "packing_list": {"status": "PENDING", "number": None},
+        "certificate_of_origin": {"status": "NOT_REQUIRED" if not is_export else "PENDING", "number": None},
+        "bl_draft": {"status": "NOT_REQUIRED" if not is_export else "PENDING", "number": None},
+        "certificate_of_analysis": {
+            "status": "GENERATED" if (qc and qc.get("coa_generated")) else "PENDING",
+            "number": qc.get("coa_number") if qc else None
+        }
+    }
+    
+    # Check if DO exists
+    do = await db.delivery_orders.find_one({"job_order_id": job_id}, {"_id": 0})
+    if do:
+        documents["delivery_order"] = {"status": "GENERATED", "number": do.get("do_number")}
+    
+    return {
+        "job_number": job.get("job_number"),
+        "is_export": is_export,
+        "customer_type": quotation.get("order_type") if quotation else "local",
+        "documents": documents
+    }
+
+
 app.include_router(api_router)
 
 app.add_middleware(
