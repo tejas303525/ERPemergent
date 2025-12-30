@@ -1,22 +1,31 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
+import { Label } from '../components/ui/label';
+import { Badge } from '../components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
+import { Checkbox } from '../components/ui/checkbox';
 import { 
-  ShoppingCart, Package, FileText, Plus, Send, Check, X, 
-  RefreshCw, Building, MapPin, Calendar, Truck, AlertTriangle 
+  ShoppingCart, Package, FileText, Plus, Check, X, 
+  RefreshCw, Building, MapPin, Truck, AlertTriangle,
+  DollarSign, Send, Eye
 } from 'lucide-react';
 import { toast } from 'sonner';
 import api from '../lib/api';
 
+const PAYMENT_TERMS = ['Advance', 'Net 15', 'Net 30', 'Net 45', 'Net 60', 'COD', 'LC', 'TT'];
+const INCOTERMS = ['EXW', 'DDP', 'DAP', 'FOB', 'CFR', 'CIF', 'FCA'];
+
 const ProcurementPage = () => {
-  const [activeTab, setActiveTab] = useState('products');
+  const [activeTab, setActiveTab] = useState('shortages');
   const [shortages, setShortages] = useState({ raw_shortages: [], pack_shortages: [] });
-  const [rfqs, setRfqs] = useState([]);
+  const [purchaseOrders, setPurchaseOrders] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
   const [companies, setCompanies] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [showCreateRFQ, setShowCreateRFQ] = useState(false);
-  const [rfqType, setRfqType] = useState('PRODUCT'); // PRODUCT or PACKAGING
+  const [selectedShortages, setSelectedShortages] = useState([]);
+  const [showGeneratePO, setShowGeneratePO] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -25,24 +34,22 @@ const ProcurementPage = () => {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [shortagesRes, rfqRes, suppRes] = await Promise.all([
+      const [shortagesRes, poRes, suppRes] = await Promise.all([
         api.get('/procurement/shortages'),
-        api.get('/rfq'),
+        api.get('/purchase-orders'),
         api.get('/suppliers')
       ]);
       setShortages(shortagesRes.data);
-      setRfqs(rfqRes.data || []);
+      setPurchaseOrders(poRes.data || []);
       setSuppliers(suppRes.data || []);
       
-      // Load companies for billing/shipping
       try {
         const compRes = await api.get('/companies');
         setCompanies(compRes.data || []);
       } catch (e) {
-        // Companies endpoint may not exist yet
         setCompanies([
-          { id: '1', name: 'Main Factory', address: '123 Industrial Area, City' },
-          { id: '2', name: 'Warehouse A', address: '456 Storage Zone, City' }
+          { id: '1', name: 'Main Factory', address: 'Industrial Area, UAE' },
+          { id: '2', name: 'Warehouse A', address: 'Free Zone, UAE' }
         ]);
       }
     } catch (error) {
@@ -62,8 +69,33 @@ const ProcurementPage = () => {
     }
   };
 
-  const productRFQs = rfqs.filter(r => r.rfq_type === 'PRODUCT' || !r.rfq_type);
-  const packagingRFQs = rfqs.filter(r => r.rfq_type === 'PACKAGING');
+  // Unique key for each shortage item
+  const getShortageKey = (shortage, jobIdx = null) => {
+    if (jobIdx !== null) {
+      return `${shortage.item_id}-${jobIdx}`;
+    }
+    return shortage.item_id;
+  };
+
+  const toggleShortageSelection = useCallback((shortage) => {
+    setSelectedShortages(prev => {
+      const key = shortage.item_id;
+      const isSelected = prev.some(s => s.item_id === key);
+      if (isSelected) {
+        return prev.filter(s => s.item_id !== key);
+      } else {
+        return [...prev, shortage];
+      }
+    });
+  }, []);
+
+  const allShortages = [
+    ...(shortages.raw_shortages || []).map(s => ({ ...s, shortage_type: 'RAW' })),
+    ...(shortages.pack_shortages || []).map(s => ({ ...s, shortage_type: 'PACK' }))
+  ];
+
+  const pendingPOs = purchaseOrders.filter(po => po.status === 'DRAFT');
+  const sentPOs = purchaseOrders.filter(po => po.status === 'SENT' || po.status === 'APPROVED');
 
   return (
     <div className="p-6 max-w-[1800px] mx-auto" data-testid="procurement-page">
@@ -71,15 +103,15 @@ const ProcurementPage = () => {
       <div className="mb-6">
         <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
           <ShoppingCart className="w-8 h-8 text-amber-500" />
-          Procurement Management
+          Procurement - Generate PO
         </h1>
-        <p className="text-muted-foreground mt-1">RFQ for Products & Packaging Materials</p>
+        <p className="text-muted-foreground mt-1">Select shortages and generate Purchase Orders directly</p>
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-5 gap-4 mb-6">
         <div className="glass p-4 rounded-lg border border-red-500/30">
-          <p className="text-sm text-muted-foreground">RAW Material Shortages</p>
+          <p className="text-sm text-muted-foreground">Raw Material Shortages</p>
           <p className="text-2xl font-bold text-red-400">{shortages.raw_shortages?.length || 0}</p>
         </div>
         <div className="glass p-4 rounded-lg border border-amber-500/30">
@@ -87,41 +119,55 @@ const ProcurementPage = () => {
           <p className="text-2xl font-bold text-amber-400">{shortages.pack_shortages?.length || 0}</p>
         </div>
         <div className="glass p-4 rounded-lg border border-blue-500/30">
-          <p className="text-sm text-muted-foreground">Open RFQs (Products)</p>
-          <p className="text-2xl font-bold text-blue-400">{productRFQs.filter(r => r.status !== 'CONVERTED').length}</p>
+          <p className="text-sm text-muted-foreground">Selected Items</p>
+          <p className="text-2xl font-bold text-blue-400">{selectedShortages.length}</p>
         </div>
-        <div className="glass p-4 rounded-lg border border-cyan-500/30">
-          <p className="text-sm text-muted-foreground">Open RFQs (Packaging)</p>
-          <p className="text-2xl font-bold text-cyan-400">{packagingRFQs.filter(r => r.status !== 'CONVERTED').length}</p>
+        <div className="glass p-4 rounded-lg border border-purple-500/30">
+          <p className="text-sm text-muted-foreground">POs Pending Approval</p>
+          <p className="text-2xl font-bold text-purple-400">{pendingPOs.length}</p>
+        </div>
+        <div className="glass p-4 rounded-lg border border-green-500/30">
+          <p className="text-sm text-muted-foreground">POs Sent</p>
+          <p className="text-2xl font-bold text-green-400">{sentPOs.length}</p>
         </div>
       </div>
 
       {/* Tabs */}
       <div className="flex gap-2 mb-6 flex-wrap">
         <Button
-          variant={activeTab === 'products' ? 'default' : 'outline'}
-          onClick={() => setActiveTab('products')}
-          className={shortages.raw_shortages?.length > 0 ? 'border-red-500/50' : ''}
+          variant={activeTab === 'shortages' ? 'default' : 'outline'}
+          onClick={() => setActiveTab('shortages')}
+          className={allShortages.length > 0 ? 'border-red-500/50' : ''}
+          data-testid="tab-shortages"
         >
-          <Package className="w-4 h-4 mr-2" />
-          RFQ for Products
-          {shortages.raw_shortages?.length > 0 && (
+          <AlertTriangle className="w-4 h-4 mr-2" />
+          Material Shortages
+          {allShortages.length > 0 && (
             <span className="ml-2 px-1.5 py-0.5 text-xs rounded bg-red-500/20 text-red-400">
-              {shortages.raw_shortages.length}
+              {allShortages.length}
             </span>
           )}
         </Button>
         <Button
-          variant={activeTab === 'packaging' ? 'default' : 'outline'}
-          onClick={() => setActiveTab('packaging')}
+          variant={activeTab === 'pending' ? 'default' : 'outline'}
+          onClick={() => setActiveTab('pending')}
+          data-testid="tab-pending"
         >
           <FileText className="w-4 h-4 mr-2" />
-          RFQ for Packaging
-          {shortages.pack_shortages?.length > 0 && (
-            <span className="ml-2 px-1.5 py-0.5 text-xs rounded bg-amber-500/20 text-amber-400">
-              {shortages.pack_shortages.length}
+          Pending POs
+          {pendingPOs.length > 0 && (
+            <span className="ml-2 px-1.5 py-0.5 text-xs rounded bg-purple-500/20 text-purple-400">
+              {pendingPOs.length}
             </span>
           )}
+        </Button>
+        <Button
+          variant={activeTab === 'history' ? 'default' : 'outline'}
+          onClick={() => setActiveTab('history')}
+          data-testid="tab-history"
+        >
+          <Package className="w-4 h-4 mr-2" />
+          PO History
         </Button>
       </div>
 
@@ -131,68 +177,76 @@ const ProcurementPage = () => {
         </div>
       ) : (
         <>
-          {/* RFQ for Products Tab */}
-          {activeTab === 'products' && (
-            <ProductRFQTab
-              shortages={shortages.raw_shortages || []}
-              rfqs={productRFQs}
-              suppliers={suppliers}
-              companies={companies}
+          {/* Shortages Tab */}
+          {activeTab === 'shortages' && (
+            <ShortagesTab
+              shortages={allShortages}
+              selectedShortages={selectedShortages}
+              onToggleSelection={toggleShortageSelection}
               onRefresh={loadData}
               onAutoGenerate={handleAutoGenerate}
+              onGeneratePO={() => setShowGeneratePO(true)}
             />
           )}
 
-          {/* RFQ for Packaging Tab */}
-          {activeTab === 'packaging' && (
-            <PackagingRFQTab
-              shortages={shortages.pack_shortages || []}
-              rfqs={packagingRFQs}
-              suppliers={suppliers}
-              companies={companies}
+          {/* Pending POs Tab */}
+          {activeTab === 'pending' && (
+            <PendingPOsTab 
+              purchaseOrders={pendingPOs}
               onRefresh={loadData}
             />
           )}
+
+          {/* PO History Tab */}
+          {activeTab === 'history' && (
+            <POHistoryTab purchaseOrders={purchaseOrders} />
+          )}
         </>
+      )}
+
+      {/* Generate PO Modal */}
+      {showGeneratePO && (
+        <GeneratePOModal
+          selectedItems={selectedShortages}
+          suppliers={suppliers}
+          companies={companies}
+          onClose={() => setShowGeneratePO(false)}
+          onCreated={() => {
+            setShowGeneratePO(false);
+            setSelectedShortages([]);
+            loadData();
+          }}
+        />
       )}
     </div>
   );
 };
 
-// ==================== RFQ FOR PRODUCTS TAB ====================
-const ProductRFQTab = ({ shortages, rfqs, suppliers, companies, onRefresh, onAutoGenerate }) => {
-  const [showCreateModal, setShowCreateModal] = useState(false);
-  const [selectedItems, setSelectedItems] = useState([]);
-
-  const toggleSelectItem = (shortage) => {
-    if (selectedItems.find(s => s.item_id === shortage.item_id)) {
-      setSelectedItems(selectedItems.filter(s => s.item_id !== shortage.item_id));
-    } else {
-      setSelectedItems([...selectedItems, shortage]);
-    }
-  };
-
+// ==================== SHORTAGES TAB ====================
+const ShortagesTab = ({ shortages, selectedShortages, onToggleSelection, onRefresh, onAutoGenerate, onGeneratePO }) => {
   return (
     <div className="space-y-6">
-      {/* Shortages Table - Job Order Based */}
       <div className="glass rounded-lg border border-border">
         <div className="p-4 border-b border-border flex justify-between items-center">
           <div>
-            <h2 className="text-lg font-semibold">Material Requirements (from Job Orders)</h2>
-            <p className="text-sm text-muted-foreground">Select items to create RFQ</p>
+            <h2 className="text-lg font-semibold">Material Shortages (from Job Orders)</h2>
+            <p className="text-sm text-muted-foreground">
+              Select items and enter unit price to generate a Purchase Order
+            </p>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" onClick={onAutoGenerate}>
+            <Button variant="outline" onClick={onAutoGenerate} data-testid="refresh-shortages-btn">
               <RefreshCw className="w-4 h-4 mr-2" />
               Refresh from BOMs
             </Button>
             <Button 
-              onClick={() => setShowCreateModal(true)}
-              disabled={selectedItems.length === 0}
-              className="bg-amber-500 hover:bg-amber-600"
+              onClick={onGeneratePO}
+              disabled={selectedShortages.length === 0}
+              className="bg-green-500 hover:bg-green-600"
+              data-testid="generate-po-btn"
             >
-              <Plus className="w-4 h-4 mr-2" />
-              Create RFQ ({selectedItems.length})
+              <DollarSign className="w-4 h-4 mr-2" />
+              Generate PO ({selectedShortages.length})
             </Button>
           </div>
         </div>
@@ -201,267 +255,217 @@ const ProductRFQTab = ({ shortages, rfqs, suppliers, companies, onRefresh, onAut
           <div className="p-8 text-center">
             <Check className="w-12 h-12 text-green-500 mx-auto mb-4" />
             <p className="text-green-400 font-medium">All materials available</p>
+            <p className="text-sm text-muted-foreground">No procurement required</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead className="bg-muted/30">
                 <tr>
-                  <th className="p-3 text-left text-xs font-medium text-muted-foreground">Select</th>
-                  <th className="p-3 text-left text-xs font-medium text-muted-foreground">Job Order</th>
-                  <th className="p-3 text-left text-xs font-medium text-muted-foreground">Product</th>
+                  <th className="p-3 text-left text-xs font-medium text-muted-foreground w-12">Select</th>
+                  <th className="p-3 text-left text-xs font-medium text-muted-foreground">Type</th>
                   <th className="p-3 text-left text-xs font-medium text-muted-foreground">Material</th>
-                  <th className="p-3 text-left text-xs font-medium text-muted-foreground">Net Weight</th>
-                  <th className="p-3 text-left text-xs font-medium text-muted-foreground">Qty Needed</th>
+                  <th className="p-3 text-left text-xs font-medium text-muted-foreground">SKU</th>
+                  <th className="p-3 text-left text-xs font-medium text-muted-foreground">Total Required</th>
                   <th className="p-3 text-left text-xs font-medium text-muted-foreground">On Hand</th>
                   <th className="p-3 text-left text-xs font-medium text-muted-foreground">Shortage</th>
-                  <th className="p-3 text-left text-xs font-medium text-muted-foreground">Status</th>
+                  <th className="p-3 text-left text-xs font-medium text-muted-foreground">Job Orders</th>
                 </tr>
               </thead>
               <tbody>
-                {shortages.map((shortage) => (
-                  shortage.jobs?.map((job, idx) => (
-                    <tr key={`${shortage.item_id}-${idx}`} className="border-b border-border/50 hover:bg-muted/10">
-                      <td className="p-3">
-                        <input
-                          type="checkbox"
-                          checked={selectedItems.some(s => s.item_id === shortage.item_id)}
-                          onChange={() => toggleSelectItem(shortage)}
-                          className="w-4 h-4"
+                {shortages.map((shortage) => {
+                  const isSelected = selectedShortages.some(s => s.item_id === shortage.item_id);
+                  return (
+                    <tr 
+                      key={shortage.item_id} 
+                      className={`border-b border-border/50 hover:bg-muted/10 cursor-pointer ${isSelected ? 'bg-blue-500/10' : ''}`}
+                      onClick={() => onToggleSelection(shortage)}
+                      data-testid={`shortage-row-${shortage.item_id}`}
+                    >
+                      <td className="p-3" onClick={(e) => e.stopPropagation()}>
+                        <Checkbox
+                          checked={isSelected}
+                          onCheckedChange={() => onToggleSelection(shortage)}
+                          data-testid={`shortage-checkbox-${shortage.item_id}`}
                         />
                       </td>
-                      <td className="p-3 font-mono text-sm">{job.job_number}</td>
-                      <td className="p-3">{job.product_name}</td>
+                      <td className="p-3">
+                        <Badge className={shortage.shortage_type === 'RAW' ? 'bg-red-500/20 text-red-400' : 'bg-amber-500/20 text-amber-400'}>
+                          {shortage.shortage_type}
+                        </Badge>
+                      </td>
                       <td className="p-3 font-medium">{shortage.item_name}</td>
-                      <td className="p-3">{job.required_qty?.toFixed(2)} {shortage.uom}</td>
+                      <td className="p-3 font-mono text-sm text-muted-foreground">{shortage.item_sku}</td>
                       <td className="p-3 text-amber-400">{shortage.total_required?.toFixed(2)} {shortage.uom}</td>
                       <td className="p-3">{shortage.on_hand?.toFixed(2)} {shortage.uom}</td>
                       <td className="p-3 text-red-400 font-bold">-{shortage.total_shortage?.toFixed(2)}</td>
-                      <td className="p-3">
-                        <span className="px-2 py-1 rounded text-xs bg-red-500/20 text-red-400">
-                          SHORTAGE
-                        </span>
+                      <td className="p-3 text-xs text-muted-foreground">
+                        {shortage.jobs?.slice(0, 3).map(j => j.job_number).join(', ')}
+                        {shortage.jobs?.length > 3 && ` +${shortage.jobs.length - 3} more`}
                       </td>
                     </tr>
-                  ))
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
         )}
       </div>
-
-      {/* Open RFQs */}
-      <div className="glass rounded-lg border border-border">
-        <div className="p-4 border-b border-border">
-          <h2 className="text-lg font-semibold">Open Product RFQs</h2>
-        </div>
-        {rfqs.length === 0 ? (
-          <div className="p-8 text-center text-muted-foreground">No open RFQs</div>
-        ) : (
-          <div className="p-4 space-y-3">
-            {rfqs.map((rfq) => (
-              <RFQCard key={rfq.id} rfq={rfq} onRefresh={onRefresh} />
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Create RFQ Modal */}
-      {showCreateModal && (
-        <CreateProductRFQModal
-          selectedItems={selectedItems}
-          suppliers={suppliers}
-          companies={companies}
-          onClose={() => setShowCreateModal(false)}
-          onCreated={() => {
-            setShowCreateModal(false);
-            setSelectedItems([]);
-            onRefresh();
-          }}
-        />
-      )}
     </div>
   );
 };
 
-// ==================== RFQ FOR PACKAGING TAB ====================
-const PackagingRFQTab = ({ shortages, rfqs, suppliers, companies, onRefresh }) => {
-  const [showCreateModal, setShowCreateModal] = useState(false);
-  const [selectedItems, setSelectedItems] = useState([]);
-
-  const toggleSelectItem = (shortage) => {
-    if (selectedItems.find(s => s.item_id === shortage.item_id)) {
-      setSelectedItems(selectedItems.filter(s => s.item_id !== shortage.item_id));
-    } else {
-      setSelectedItems([...selectedItems, shortage]);
+// ==================== PENDING POs TAB ====================
+const PendingPOsTab = ({ purchaseOrders, onRefresh }) => {
+  const handleSendForApproval = async (poId) => {
+    try {
+      // PO is already in DRAFT status pending finance approval
+      toast.success('PO is pending finance approval');
+      onRefresh();
+    } catch (error) {
+      toast.error('Failed to send for approval');
     }
   };
 
   return (
-    <div className="space-y-6">
-      {/* Packaging Shortages */}
-      <div className="glass rounded-lg border border-border">
-        <div className="p-4 border-b border-border flex justify-between items-center">
-          <div>
-            <h2 className="text-lg font-semibold">Packaging Material Requirements</h2>
-            <p className="text-sm text-muted-foreground">From packaging BOMs</p>
-          </div>
-          <Button 
-            onClick={() => setShowCreateModal(true)}
-            disabled={selectedItems.length === 0}
-            className="bg-cyan-500 hover:bg-cyan-600"
-          >
-            <Plus className="w-4 h-4 mr-2" />
-            Create Packaging RFQ ({selectedItems.length})
-          </Button>
-        </div>
-
-        {shortages.length === 0 ? (
-          <div className="p-8 text-center">
-            <Check className="w-12 h-12 text-green-500 mx-auto mb-4" />
-            <p className="text-green-400 font-medium">All packaging materials available</p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-muted/30">
-                <tr>
-                  <th className="p-3 text-left text-xs font-medium text-muted-foreground">Select</th>
-                  <th className="p-3 text-left text-xs font-medium text-muted-foreground">Material</th>
-                  <th className="p-3 text-left text-xs font-medium text-muted-foreground">SKU</th>
-                  <th className="p-3 text-left text-xs font-medium text-muted-foreground">Qty Needed</th>
-                  <th className="p-3 text-left text-xs font-medium text-muted-foreground">On Hand</th>
-                  <th className="p-3 text-left text-xs font-medium text-muted-foreground">Shortage</th>
-                  <th className="p-3 text-left text-xs font-medium text-muted-foreground">Jobs</th>
-                </tr>
-              </thead>
-              <tbody>
-                {shortages.map((shortage) => (
-                  <tr key={shortage.item_id} className="border-b border-border/50 hover:bg-muted/10">
-                    <td className="p-3">
-                      <input
-                        type="checkbox"
-                        checked={selectedItems.some(s => s.item_id === shortage.item_id)}
-                        onChange={() => toggleSelectItem(shortage)}
-                        className="w-4 h-4"
-                      />
-                    </td>
-                    <td className="p-3 font-medium">{shortage.item_name}</td>
-                    <td className="p-3 font-mono text-sm text-muted-foreground">{shortage.item_sku}</td>
-                    <td className="p-3 text-amber-400">{shortage.total_required?.toFixed(0)} {shortage.uom}</td>
-                    <td className="p-3">{shortage.on_hand?.toFixed(0)}</td>
-                    <td className="p-3 text-red-400 font-bold">-{shortage.total_shortage?.toFixed(0)}</td>
-                    <td className="p-3 text-xs text-muted-foreground">
-                      {shortage.jobs?.slice(0, 2).map(j => j.job_number).join(', ')}
-                      {shortage.jobs?.length > 2 && ` +${shortage.jobs.length - 2}`}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-      {/* Open Packaging RFQs */}
+    <div className="space-y-4">
       <div className="glass rounded-lg border border-border">
         <div className="p-4 border-b border-border">
-          <h2 className="text-lg font-semibold">Open Packaging RFQs</h2>
+          <h2 className="text-lg font-semibold">Purchase Orders Pending Finance Approval</h2>
+          <p className="text-sm text-muted-foreground">
+            These POs will appear on the Finance Approval page
+          </p>
         </div>
-        {rfqs.length === 0 ? (
-          <div className="p-8 text-center text-muted-foreground">No open packaging RFQs</div>
+
+        {purchaseOrders.length === 0 ? (
+          <div className="p-8 text-center">
+            <FileText className="w-12 h-12 text-muted-foreground mx-auto mb-4 opacity-50" />
+            <p className="text-muted-foreground">No pending POs</p>
+          </div>
         ) : (
           <div className="p-4 space-y-3">
-            {rfqs.map((rfq) => (
-              <RFQCard key={rfq.id} rfq={rfq} onRefresh={onRefresh} />
+            {purchaseOrders.map((po) => (
+              <POCard key={po.id} po={po} onRefresh={onRefresh} showStatus />
             ))}
           </div>
         )}
       </div>
+    </div>
+  );
+};
 
-      {/* Create Packaging RFQ Modal */}
-      {showCreateModal && (
-        <CreatePackagingRFQModal
-          selectedItems={selectedItems}
-          suppliers={suppliers}
-          companies={companies}
-          onClose={() => setShowCreateModal(false)}
-          onCreated={() => {
-            setShowCreateModal(false);
-            setSelectedItems([]);
-            onRefresh();
-          }}
-        />
+// ==================== PO HISTORY TAB ====================
+const POHistoryTab = ({ purchaseOrders }) => {
+  return (
+    <div className="glass rounded-lg border border-border">
+      <div className="p-4 border-b border-border">
+        <h2 className="text-lg font-semibold">Purchase Order History</h2>
+      </div>
+      
+      {purchaseOrders.length === 0 ? (
+        <div className="p-8 text-center text-muted-foreground">No purchase orders found</div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-muted/30">
+              <tr>
+                <th className="p-3 text-left text-xs font-medium text-muted-foreground">PO Number</th>
+                <th className="p-3 text-left text-xs font-medium text-muted-foreground">Supplier</th>
+                <th className="p-3 text-left text-xs font-medium text-muted-foreground">Amount</th>
+                <th className="p-3 text-left text-xs font-medium text-muted-foreground">Status</th>
+                <th className="p-3 text-left text-xs font-medium text-muted-foreground">Created</th>
+              </tr>
+            </thead>
+            <tbody>
+              {purchaseOrders.map((po) => (
+                <tr key={po.id} className="border-b border-border/50 hover:bg-muted/10">
+                  <td className="p-3 font-mono font-medium">{po.po_number}</td>
+                  <td className="p-3">{po.supplier_name}</td>
+                  <td className="p-3 text-green-400 font-medium">
+                    {po.currency} {po.total_amount?.toFixed(2)}
+                  </td>
+                  <td className="p-3">
+                    <Badge className={
+                      po.status === 'APPROVED' ? 'bg-green-500/20 text-green-400' :
+                      po.status === 'SENT' ? 'bg-blue-500/20 text-blue-400' :
+                      po.status === 'REJECTED' ? 'bg-red-500/20 text-red-400' :
+                      'bg-gray-500/20 text-gray-400'
+                    }>
+                      {po.status}
+                    </Badge>
+                  </td>
+                  <td className="p-3 text-sm text-muted-foreground">
+                    {new Date(po.created_at).toLocaleDateString()}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );
 };
 
-// ==================== RFQ CARD ====================
-const RFQCard = ({ rfq, onRefresh }) => {
-  const handleSend = async () => {
-    try {
-      await api.put(`/rfq/${rfq.id}/send`);
-      toast.success('RFQ sent to supplier');
-      onRefresh();
-    } catch (error) {
-      toast.error('Failed to send');
-    }
-  };
-
-  const handleConvert = async () => {
-    try {
-      const res = await api.post(`/rfq/${rfq.id}/convert-to-po`);
-      toast.success(res.data.message);
-      onRefresh();
-    } catch (error) {
-      toast.error('Failed: ' + (error.response?.data?.detail || error.message));
-    }
-  };
+// ==================== PO CARD ====================
+const POCard = ({ po, onRefresh, showStatus }) => {
+  const [showDetails, setShowDetails] = useState(false);
 
   const statusColor = {
-    DRAFT: 'bg-gray-500/20 text-gray-400',
-    SENT: 'bg-blue-500/20 text-blue-400',
-    QUOTED: 'bg-green-500/20 text-green-400',
-    CONVERTED: 'bg-emerald-500/20 text-emerald-400'
+    DRAFT: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
+    APPROVED: 'bg-green-500/20 text-green-400 border-green-500/30',
+    SENT: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
+    REJECTED: 'bg-red-500/20 text-red-400 border-red-500/30'
   };
 
   return (
-    <div className="p-4 rounded-lg border border-border bg-muted/5">
+    <div className={`p-4 rounded-lg border ${statusColor[po.status] || 'border-border'} bg-muted/5`} data-testid={`po-card-${po.po_number}`}>
       <div className="flex items-start justify-between">
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <span className="font-bold">{rfq.rfq_number}</span>
-            <span className={`px-2 py-0.5 rounded text-xs ${statusColor[rfq.status] || statusColor.DRAFT}`}>
-              {rfq.status}
-            </span>
+            <span className="font-bold text-lg">{po.po_number}</span>
+            <Badge className={statusColor[po.status]}>
+              {po.status === 'DRAFT' ? 'PENDING APPROVAL' : po.status}
+            </Badge>
           </div>
-          <p className="text-sm text-muted-foreground">Supplier: {rfq.supplier_name}</p>
-          <p className="text-sm">Items: {rfq.lines?.length || 0}</p>
-          {rfq.total_amount > 0 && (
-            <p className="text-amber-400 font-medium">{rfq.currency} {rfq.total_amount?.toFixed(2)}</p>
-          )}
+          <p className="text-muted-foreground text-sm">Supplier: {po.supplier_name}</p>
+          <p className="text-green-400 font-medium text-lg mt-1">
+            {po.currency} {po.total_amount?.toFixed(2)}
+          </p>
+          <p className="text-xs text-muted-foreground mt-1">
+            Created: {new Date(po.created_at).toLocaleDateString()}
+          </p>
         </div>
         <div className="flex gap-2">
-          {rfq.status === 'DRAFT' && (
-            <Button size="sm" onClick={handleSend} className="bg-blue-500 hover:bg-blue-600">
-              <Send className="w-4 h-4 mr-1" /> Send
-            </Button>
-          )}
-          {rfq.status === 'QUOTED' && (
-            <Button size="sm" onClick={handleConvert} className="bg-green-500 hover:bg-green-600">
-              <Check className="w-4 h-4 mr-1" /> Convert to PO
-            </Button>
-          )}
+          <Button size="sm" variant="outline" onClick={() => setShowDetails(!showDetails)}>
+            <Eye className="w-4 h-4 mr-1" />
+            {showDetails ? 'Hide' : 'View'} Items
+          </Button>
         </div>
       </div>
+
+      {showDetails && po.lines && po.lines.length > 0 && (
+        <div className="mt-4 border-t border-border pt-3">
+          <div className="grid grid-cols-4 gap-2 text-xs text-muted-foreground mb-2">
+            <span className="col-span-2">Item</span>
+            <span>Qty</span>
+            <span>Unit Price</span>
+          </div>
+          {po.lines.map((line, idx) => (
+            <div key={idx} className="grid grid-cols-4 gap-2 text-sm py-1">
+              <span className="col-span-2 truncate">{line.item_name}</span>
+              <span>{line.qty} {line.uom}</span>
+              <span>{po.currency} {line.unit_price?.toFixed(2) || '-'}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 };
 
-// ==================== CREATE PRODUCT RFQ MODAL ====================
-const CreateProductRFQModal = ({ selectedItems, suppliers, companies, onClose, onCreated }) => {
+// ==================== GENERATE PO MODAL ====================
+const GeneratePOModal = ({ selectedItems, suppliers, companies, onClose, onCreated }) => {
   const [form, setForm] = useState({
     supplier_id: '',
     billing_company_id: '',
@@ -469,15 +473,19 @@ const CreateProductRFQModal = ({ selectedItems, suppliers, companies, onClose, o
     delivery_date: '',
     payment_terms: 'Net 30',
     incoterm: 'EXW',
+    currency: 'USD',
     notes: ''
   });
+  
   const [lines, setLines] = useState(
     selectedItems.map(item => ({
       item_id: item.item_id,
       item_name: item.item_name,
-      qty: item.total_shortage || 0,
+      item_sku: item.item_sku,
+      item_type: item.shortage_type,
+      qty: Math.ceil(item.total_shortage || 0),
       uom: item.uom,
-      qty_per_unit: '',
+      unit_price: 0,
       jobs: item.jobs || []
     }))
   );
@@ -487,16 +495,27 @@ const CreateProductRFQModal = ({ selectedItems, suppliers, companies, onClose, o
   const billingCompany = companies.find(c => c.id === form.billing_company_id);
   const shippingCompany = companies.find(c => c.id === form.shipping_company_id);
 
+  // Calculate total
+  const totalAmount = lines.reduce((sum, line) => sum + (line.qty * line.unit_price), 0);
+
   const handleSubmit = async () => {
     if (!form.supplier_id) {
-      toast.error('Select a supplier');
+      toast.error('Please select a vendor');
       return;
     }
+    
+    const hasZeroPrice = lines.some(l => l.unit_price <= 0);
+    if (hasZeroPrice) {
+      toast.error('Please enter unit price for all items');
+      return;
+    }
+
     setSubmitting(true);
     try {
-      await api.post('/rfq', {
+      // Generate PO directly
+      const res = await api.post('/purchase-orders/generate', {
         supplier_id: form.supplier_id,
-        rfq_type: 'PRODUCT',
+        supplier_name: selectedSupplier?.name || '',
         billing_company: billingCompany?.name,
         billing_address: billingCompany?.address,
         shipping_company: shippingCompany?.name,
@@ -504,16 +523,22 @@ const CreateProductRFQModal = ({ selectedItems, suppliers, companies, onClose, o
         delivery_date: form.delivery_date,
         payment_terms: form.payment_terms,
         incoterm: form.incoterm,
+        currency: form.currency,
+        total_amount: totalAmount,
         lines: lines.map(l => ({
           item_id: l.item_id,
+          item_name: l.item_name,
+          item_type: l.item_type,
           qty: l.qty,
-          qty_per_unit: l.qty_per_unit,
+          uom: l.uom,
+          unit_price: l.unit_price,
           required_by: form.delivery_date,
-          job_numbers: l.jobs.map(j => j.job_number)
+          job_numbers: l.jobs?.map(j => j.job_number) || []
         })),
         notes: form.notes
       });
-      toast.success('RFQ created');
+      
+      toast.success(`PO ${res.data.po_number} created and sent to Finance Approval`);
       onCreated();
     } catch (error) {
       toast.error('Failed: ' + (error.response?.data?.detail || error.message));
@@ -523,321 +548,242 @@ const CreateProductRFQModal = ({ selectedItems, suppliers, companies, onClose, o
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-background border border-border rounded-lg p-6 max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-        <div className="flex justify-between items-center mb-6">
-          <h2 className="text-xl font-bold">Create Product RFQ</h2>
-          <Button variant="ghost" size="sm" onClick={onClose}><X className="w-4 h-4" /></Button>
-        </div>
+    <Dialog open={true} onOpenChange={onClose}>
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <DollarSign className="w-5 h-5 text-green-500" />
+            Generate Purchase Order
+          </DialogTitle>
+        </DialogHeader>
 
-        <div className="grid grid-cols-2 gap-6">
-          {/* Left Column - Vendor & Companies */}
-          <div className="space-y-4">
-            {/* Vendor */}
-            <div>
-              <label className="block text-sm font-medium mb-1">Vendor *</label>
-              <select
-                value={form.supplier_id}
-                onChange={(e) => setForm({...form, supplier_id: e.target.value})}
-                className="w-full bg-background border border-border rounded px-3 py-2"
-              >
-                <option value="">Select Vendor</option>
-                {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-              </select>
-              {selectedSupplier && (
-                <div className="mt-2 p-2 rounded bg-muted/30 text-sm">
-                  <MapPin className="w-3 h-3 inline mr-1" />
-                  {selectedSupplier.address || 'No address'}
-                </div>
-              )}
+        <div className="space-y-6 py-4">
+          {/* Vendor & Company Selection */}
+          <div className="grid grid-cols-2 gap-6">
+            <div className="space-y-4">
+              <div>
+                <Label>Vendor *</Label>
+                <Select value={form.supplier_id} onValueChange={(v) => setForm({...form, supplier_id: v})}>
+                  <SelectTrigger data-testid="vendor-select">
+                    <SelectValue placeholder="Select Vendor" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {suppliers.map(s => (
+                      <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {selectedSupplier && (
+                  <div className="mt-2 p-2 rounded bg-muted/30 text-sm">
+                    <MapPin className="w-3 h-3 inline mr-1" />
+                    {selectedSupplier.address || selectedSupplier.email || 'No contact info'}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <Label>Billing Company</Label>
+                <Select value={form.billing_company_id} onValueChange={(v) => setForm({...form, billing_company_id: v})}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select Billing Company" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {companies.map(c => (
+                      <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {billingCompany && (
+                  <div className="mt-2 p-2 rounded bg-muted/30 text-sm">
+                    <Building className="w-3 h-3 inline mr-1" />
+                    {billingCompany.address}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <Label>Shipping Company</Label>
+                <Select value={form.shipping_company_id} onValueChange={(v) => setForm({...form, shipping_company_id: v})}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select Shipping Company" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {companies.map(c => (
+                      <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {shippingCompany && (
+                  <div className="mt-2 p-2 rounded bg-muted/30 text-sm">
+                    <Truck className="w-3 h-3 inline mr-1" />
+                    {shippingCompany.address}
+                  </div>
+                )}
+              </div>
             </div>
 
-            {/* Billing Company */}
-            <div>
-              <label className="block text-sm font-medium mb-1">Billing Company</label>
-              <select
-                value={form.billing_company_id}
-                onChange={(e) => setForm({...form, billing_company_id: e.target.value})}
-                className="w-full bg-background border border-border rounded px-3 py-2"
-              >
-                <option value="">Select Billing Company</option>
-                {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
-              {billingCompany && (
-                <div className="mt-2 p-2 rounded bg-muted/30 text-sm">
-                  <Building className="w-3 h-3 inline mr-1" />
-                  {billingCompany.address}
-                </div>
-              )}
-            </div>
+            <div className="space-y-4">
+              <div>
+                <Label>Required Delivery Date</Label>
+                <Input
+                  type="date"
+                  value={form.delivery_date}
+                  onChange={(e) => setForm({...form, delivery_date: e.target.value})}
+                />
+              </div>
 
-            {/* Shipping Company */}
-            <div>
-              <label className="block text-sm font-medium mb-1">Shipping Company</label>
-              <select
-                value={form.shipping_company_id}
-                onChange={(e) => setForm({...form, shipping_company_id: e.target.value})}
-                className="w-full bg-background border border-border rounded px-3 py-2"
-              >
-                <option value="">Select Shipping Company</option>
-                {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
-              {shippingCompany && (
-                <div className="mt-2 p-2 rounded bg-muted/30 text-sm">
-                  <Truck className="w-3 h-3 inline mr-1" />
-                  {shippingCompany.address}
+              <div>
+                <Label>Payment Terms</Label>
+                <Select value={form.payment_terms} onValueChange={(v) => setForm({...form, payment_terms: v})}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PAYMENT_TERMS.map(t => (
+                      <SelectItem key={t} value={t}>{t}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label>Incoterm</Label>
+                  <Select value={form.incoterm} onValueChange={(v) => setForm({...form, incoterm: v})}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {INCOTERMS.map(i => (
+                        <SelectItem key={i} value={i}>{i}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
-              )}
+                <div>
+                  <Label>Currency</Label>
+                  <Select value={form.currency} onValueChange={(v) => setForm({...form, currency: v})}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="USD">USD</SelectItem>
+                      <SelectItem value="AED">AED</SelectItem>
+                      <SelectItem value="EUR">EUR</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div>
+                <Label>Notes</Label>
+                <Input
+                  value={form.notes}
+                  onChange={(e) => setForm({...form, notes: e.target.value})}
+                  placeholder="Optional notes"
+                />
+              </div>
             </div>
           </div>
 
-          {/* Right Column - Terms */}
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium mb-1">Delivery Date</label>
-              <Input
-                type="date"
-                value={form.delivery_date}
-                onChange={(e) => setForm({...form, delivery_date: e.target.value})}
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium mb-1">Terms of Payment</label>
-              <select
-                value={form.payment_terms}
-                onChange={(e) => setForm({...form, payment_terms: e.target.value})}
-                className="w-full bg-background border border-border rounded px-3 py-2"
-              >
-                <option value="Advance">Advance</option>
-                <option value="Net 15">Net 15</option>
-                <option value="Net 30">Net 30</option>
-                <option value="Net 45">Net 45</option>
-                <option value="Net 60">Net 60</option>
-                <option value="COD">COD</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium mb-1">Terms of Delivery (Incoterm)</label>
-              <select
-                value={form.incoterm}
-                onChange={(e) => setForm({...form, incoterm: e.target.value})}
-                className="w-full bg-background border border-border rounded px-3 py-2"
-              >
-                <optgroup label="LOCAL">
-                  <option value="EXW">EXW - Ex Works</option>
-                  <option value="DDP">DDP - Delivered Duty Paid</option>
-                  <option value="DAP">DAP - Delivered at Place</option>
-                </optgroup>
-                <optgroup label="IMPORT">
-                  <option value="FOB">FOB - Free On Board</option>
-                  <option value="CFR">CFR - Cost and Freight</option>
-                  <option value="CIF">CIF - Cost Insurance Freight</option>
-                  <option value="FCA">FCA - Free Carrier</option>
-                </optgroup>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium mb-1">Notes</label>
-              <textarea
-                value={form.notes}
-                onChange={(e) => setForm({...form, notes: e.target.value})}
-                className="w-full bg-background border border-border rounded px-3 py-2"
-                rows={2}
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* Lines Table */}
-        <div className="mt-6">
-          <h3 className="font-semibold mb-3">Items</h3>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-muted/30">
-                <tr>
-                  <th className="p-2 text-left">Job Orders</th>
-                  <th className="p-2 text-left">Material</th>
-                  <th className="p-2 text-left">Qty Needed</th>
-                  <th className="p-2 text-left">Qty/Unit (optional)</th>
-                </tr>
-              </thead>
-              <tbody>
-                {lines.map((line, idx) => (
-                  <tr key={idx} className="border-b border-border/50">
-                    <td className="p-2 text-xs">
-                      {line.jobs.map(j => j.job_number).join(', ')}
-                    </td>
-                    <td className="p-2 font-medium">{line.item_name}</td>
-                    <td className="p-2">
-                      <Input
-                        type="number"
-                        value={line.qty}
-                        onChange={(e) => {
-                          const newLines = [...lines];
-                          newLines[idx].qty = parseFloat(e.target.value) || 0;
-                          setLines(newLines);
-                        }}
-                        className="w-32"
-                      />
-                      <span className="ml-1 text-muted-foreground">{line.uom}</span>
-                    </td>
-                    <td className="p-2">
-                      <Input
-                        type="text"
-                        placeholder="e.g., 25kg/bag"
-                        value={line.qty_per_unit}
-                        onChange={(e) => {
-                          const newLines = [...lines];
-                          newLines[idx].qty_per_unit = e.target.value;
-                          setLines(newLines);
-                        }}
-                        className="w-32"
-                      />
+          {/* Items Table with Unit Price */}
+          <div className="border-t border-border pt-4">
+            <h3 className="font-semibold mb-3">PO Line Items - Enter Unit Price</h3>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-muted/30">
+                  <tr>
+                    <th className="p-2 text-left">Material</th>
+                    <th className="p-2 text-left">SKU</th>
+                    <th className="p-2 text-left">Type</th>
+                    <th className="p-2 text-left">Quantity</th>
+                    <th className="p-2 text-left">Unit Price *</th>
+                    <th className="p-2 text-left">Line Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {lines.map((line, idx) => (
+                    <tr key={idx} className="border-b border-border/50">
+                      <td className="p-2 font-medium">{line.item_name}</td>
+                      <td className="p-2 font-mono text-muted-foreground">{line.item_sku}</td>
+                      <td className="p-2">
+                        <Badge className={line.item_type === 'RAW' ? 'bg-red-500/20 text-red-400' : 'bg-amber-500/20 text-amber-400'}>
+                          {line.item_type}
+                        </Badge>
+                      </td>
+                      <td className="p-2">
+                        <Input
+                          type="number"
+                          value={line.qty}
+                          onChange={(e) => {
+                            const newLines = [...lines];
+                            newLines[idx].qty = parseFloat(e.target.value) || 0;
+                            setLines(newLines);
+                          }}
+                          className="w-24"
+                          data-testid={`qty-input-${idx}`}
+                        />
+                        <span className="ml-1 text-muted-foreground">{line.uom}</span>
+                      </td>
+                      <td className="p-2">
+                        <div className="flex items-center gap-1">
+                          <span className="text-muted-foreground">{form.currency}</span>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            placeholder="0.00"
+                            value={line.unit_price || ''}
+                            onChange={(e) => {
+                              const newLines = [...lines];
+                              newLines[idx].unit_price = parseFloat(e.target.value) || 0;
+                              setLines(newLines);
+                            }}
+                            className="w-28"
+                            data-testid={`price-input-${idx}`}
+                          />
+                        </div>
+                      </td>
+                      <td className="p-2 font-medium text-green-400">
+                        {form.currency} {(line.qty * line.unit_price).toFixed(2)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot className="bg-muted/20">
+                  <tr>
+                    <td colSpan={5} className="p-3 text-right font-semibold">Total Amount:</td>
+                    <td className="p-3 text-lg font-bold text-green-400">
+                      {form.currency} {totalAmount.toFixed(2)}
                     </td>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </tfoot>
+              </table>
+            </div>
           </div>
-        </div>
 
-        {/* Actions */}
-        <div className="flex justify-end gap-2 mt-6">
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={handleSubmit} disabled={submitting} className="bg-amber-500 hover:bg-amber-600">
-            {submitting ? 'Creating...' : 'Create RFQ'}
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
-};
+          {/* Info Banner */}
+          <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-3">
+            <p className="text-sm text-blue-400">
+              <strong>Note:</strong> This PO will be sent to the Finance Approval page. 
+              After finance approval, it can be sent to the vendor.
+            </p>
+          </div>
 
-// ==================== CREATE PACKAGING RFQ MODAL ====================
-const CreatePackagingRFQModal = ({ selectedItems, suppliers, companies, onClose, onCreated }) => {
-  const [form, setForm] = useState({
-    supplier_id: '',
-    delivery_date: '',
-    payment_terms: 'Net 30',
-    notes: ''
-  });
-  const [lines, setLines] = useState(
-    selectedItems.map(item => ({
-      item_id: item.item_id,
-      item_name: item.item_name,
-      qty: item.total_shortage || 0,
-      uom: item.uom
-    }))
-  );
-  const [submitting, setSubmitting] = useState(false);
-
-  const handleSubmit = async () => {
-    if (!form.supplier_id) {
-      toast.error('Select a supplier');
-      return;
-    }
-    setSubmitting(true);
-    try {
-      await api.post('/rfq', {
-        supplier_id: form.supplier_id,
-        rfq_type: 'PACKAGING',
-        delivery_date: form.delivery_date,
-        payment_terms: form.payment_terms,
-        lines: lines.map(l => ({
-          item_id: l.item_id,
-          qty: l.qty,
-          required_by: form.delivery_date
-        })),
-        notes: form.notes
-      });
-      toast.success('Packaging RFQ created');
-      onCreated();
-    } catch (error) {
-      toast.error('Failed: ' + (error.response?.data?.detail || error.message));
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-background border border-border rounded-lg p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-        <div className="flex justify-between items-center mb-6">
-          <h2 className="text-xl font-bold">Create Packaging RFQ</h2>
-          <Button variant="ghost" size="sm" onClick={onClose}><X className="w-4 h-4" /></Button>
-        </div>
-
-        <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium mb-1">Packaging Supplier *</label>
-            <select
-              value={form.supplier_id}
-              onChange={(e) => setForm({...form, supplier_id: e.target.value})}
-              className="w-full bg-background border border-border rounded px-3 py-2"
+          {/* Actions */}
+          <div className="flex justify-end gap-2 pt-4 border-t">
+            <Button variant="outline" onClick={onClose}>Cancel</Button>
+            <Button 
+              onClick={handleSubmit} 
+              disabled={submitting || !form.supplier_id}
+              className="bg-green-500 hover:bg-green-600"
+              data-testid="submit-po-btn"
             >
-              <option value="">Select Supplier</option>
-              {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium mb-1">Delivery Date</label>
-              <Input
-                type="date"
-                value={form.delivery_date}
-                onChange={(e) => setForm({...form, delivery_date: e.target.value})}
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Payment Terms</label>
-              <select
-                value={form.payment_terms}
-                onChange={(e) => setForm({...form, payment_terms: e.target.value})}
-                className="w-full bg-background border border-border rounded px-3 py-2"
-              >
-                <option value="Net 30">Net 30</option>
-                <option value="Net 15">Net 15</option>
-                <option value="COD">COD</option>
-              </select>
-            </div>
-          </div>
-
-          {/* Lines */}
-          <div>
-            <h3 className="font-semibold mb-2">Packaging Items</h3>
-            <div className="space-y-2">
-              {lines.map((line, idx) => (
-                <div key={idx} className="flex items-center gap-4 p-2 rounded bg-muted/20">
-                  <span className="flex-1 font-medium">{line.item_name}</span>
-                  <Input
-                    type="number"
-                    value={line.qty}
-                    onChange={(e) => {
-                      const newLines = [...lines];
-                      newLines[idx].qty = parseFloat(e.target.value) || 0;
-                      setLines(newLines);
-                    }}
-                    className="w-24"
-                  />
-                  <span className="text-muted-foreground">{line.uom}</span>
-                </div>
-              ))}
-            </div>
+              {submitting ? 'Creating...' : `Generate PO (${form.currency} ${totalAmount.toFixed(2)})`}
+            </Button>
           </div>
         </div>
-
-        <div className="flex justify-end gap-2 mt-6">
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={handleSubmit} disabled={submitting} className="bg-cyan-500 hover:bg-cyan-600">
-            {submitting ? 'Creating...' : 'Create RFQ'}
-          </Button>
-        </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 };
 
