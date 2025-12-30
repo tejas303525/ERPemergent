@@ -211,33 +211,57 @@ const ImportList = ({ imports, onSelect, selectedId, onRefresh }) => {
 
 // Import Details with Document Checklist
 const ImportDetails = ({ importRecord, onRefresh, onClose }) => {
-  const [checklist, setChecklist] = useState(importRecord.document_checklist || getDefaultChecklist());
-  const [uploading, setUploading] = useState(false);
+  // Updated document checklist with correct import documents
+  const defaultChecklist = [
+    { type: 'delivery_order', label: 'Delivery Order', received: false },
+    { type: 'bill_of_lading', label: 'Bill of Lading (BL)', received: false },
+    { type: 'epda', label: 'EPDA (Entry Permission)', received: false },
+    { type: 'sira', label: 'SIRA Certificate', received: false },
+  ];
+  
+  const [checklist, setChecklist] = useState(
+    importRecord.document_checklist 
+      ? Object.entries(importRecord.document_checklist).map(([key, value]) => ({
+          type: key,
+          label: key.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' '),
+          received: value
+        }))
+      : defaultChecklist
+  );
+  const [moving, setMoving] = useState(false);
 
   const handleCheckItem = async (docType) => {
     const newChecklist = checklist.map(item => 
-      item.type === docType ? { ...item, received: !item.received, received_at: !item.received ? new Date().toISOString() : null } : item
+      item.type === docType ? { ...item, received: !item.received } : item
     );
     setChecklist(newChecklist);
     
     try {
-      await api.put(`/imports/${importRecord.id}/checklist`, { checklist: newChecklist });
-      toast.success(`${docType} ${newChecklist.find(i => i.type === docType)?.received ? 'received' : 'unmarked'}`);
+      // Convert to object format for API
+      const checklistObj = {};
+      newChecklist.forEach(item => {
+        checklistObj[item.type] = item.received;
+      });
+      
+      await api.put(`/imports/${importRecord.id}/documents`, checklistObj);
+      toast.success(`Document ${newChecklist.find(i => i.type === docType)?.received ? 'received' : 'unmarked'}`);
       onRefresh();
     } catch (error) {
-      // Revert on error
       setChecklist(checklist);
       toast.error('Failed to update checklist');
     }
   };
 
-  const handleStatusUpdate = async (newStatus) => {
+  const handleMoveToTransport = async () => {
+    setMoving(true);
     try {
-      await api.put(`/imports/${importRecord.id}/status`, { status: newStatus });
-      toast.success(`Import status updated to ${newStatus}`);
+      const res = await api.put(`/imports/${importRecord.id}/move-to-transport`);
+      toast.success(`Moved to Transport Window: ${res.data.transport_number}`);
       onRefresh();
     } catch (error) {
-      toast.error('Failed to update status');
+      toast.error(error.response?.data?.detail || 'Failed to move to transport');
+    } finally {
+      setMoving(false);
     }
   };
 
