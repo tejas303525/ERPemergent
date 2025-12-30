@@ -1,18 +1,24 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
+import { Label } from '../components/ui/label';
+import { Badge } from '../components/ui/badge';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { 
   Truck, ArrowDownToLine, ArrowUpFromLine, Package, Check, Clock, 
-  AlertTriangle, Plus, Calendar, MapPin, Ship, Container
+  AlertTriangle, Plus, Calendar, MapPin, Ship, Container, RefreshCw,
+  Globe, Home
 } from 'lucide-react';
 import { toast } from 'sonner';
 import api from '../lib/api';
 
 const TransportWindowPage = () => {
-  const [activeTab, setActiveTab] = useState('inward');
-  const [inwardTransports, setInwardTransports] = useState([]);
-  const [outwardLocal, setOutwardLocal] = useState([]);
-  const [outwardContainer, setOutwardContainer] = useState([]);
+  const [activeTab, setActiveTab] = useState('inward_exw');
+  const [inwardEXW, setInwardEXW] = useState([]);
+  const [inwardImport, setInwardImport] = useState([]);
+  const [localDispatch, setLocalDispatch] = useState([]);
+  const [exportContainer, setExportContainer] = useState([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -22,19 +28,24 @@ const TransportWindowPage = () => {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [inwardRes, outwardRes] = await Promise.all([
+      const [inwardRes, outwardRes, importsRes] = await Promise.all([
         api.get('/transport/inward'),
-        api.get('/transport/outward')
+        api.get('/transport/outward'),
+        api.get('/imports').catch(() => ({ data: [] }))
       ]);
-      setInwardTransports(inwardRes.data || []);
+      
+      const inward = inwardRes.data || [];
+      // Separate EXW inward from Import inward
+      setInwardEXW(inward.filter(t => t.source === 'PO_EXW' || t.incoterm === 'EXW'));
+      
+      // Import logistics from imports collection
+      setInwardImport(importsRes.data || []);
       
       const outward = outwardRes.data || [];
-      setOutwardLocal(outward.filter(t => t.transport_type === 'LOCAL'));
-      setOutwardContainer(outward.filter(t => t.transport_type === 'CONTAINER'));
+      setLocalDispatch(outward.filter(t => t.transport_type === 'LOCAL'));
+      setExportContainer(outward.filter(t => t.transport_type === 'CONTAINER'));
     } catch (error) {
-      setInwardTransports([]);
-      setOutwardLocal([]);
-      setOutwardContainer([]);
+      console.error('Failed to load transport data:', error);
     } finally {
       setLoading(false);
     }
@@ -51,10 +62,10 @@ const TransportWindowPage = () => {
   };
 
   // Stats
-  const inwardPending = inwardTransports.filter(t => t.status === 'PENDING').length;
-  const inwardInTransit = inwardTransports.filter(t => t.status === 'IN_TRANSIT').length;
-  const localPending = outwardLocal.filter(t => t.status === 'PENDING').length;
-  const containerPending = outwardContainer.filter(t => t.status === 'PENDING').length;
+  const exwPending = inwardEXW.filter(t => t.status === 'PENDING').length;
+  const importPending = inwardImport.filter(t => t.status === 'PENDING').length;
+  const localPending = localDispatch.filter(t => t.status === 'PENDING').length;
+  const exportPending = exportContainer.filter(t => t.status === 'PENDING').length;
 
   return (
     <div className="p-6 max-w-[1800px] mx-auto" data-testid="transport-window-page">
@@ -64,118 +75,122 @@ const TransportWindowPage = () => {
           <Truck className="w-8 h-8 text-blue-500" />
           Transport Window
         </h1>
-        <p className="text-muted-foreground mt-1">Inward & Outward Transport Management (4 Tables)</p>
+        <p className="text-muted-foreground mt-1">
+          Inward (EXW/Import) & Outward (Local Dispatch/Export Container) Management
+        </p>
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-5 gap-4 mb-6">
+      <div className="grid grid-cols-4 gap-4 mb-6">
         <div className="glass p-4 rounded-lg border border-blue-500/30">
-          <p className="text-sm text-muted-foreground">Inward Pending</p>
-          <p className="text-2xl font-bold text-blue-400">{inwardPending}</p>
+          <p className="text-sm text-muted-foreground">Inward EXW Pending</p>
+          <p className="text-2xl font-bold text-blue-400">{exwPending}</p>
         </div>
-        <div className="glass p-4 rounded-lg border border-cyan-500/30">
-          <p className="text-sm text-muted-foreground">In Transit</p>
-          <p className="text-2xl font-bold text-cyan-400">{inwardInTransit}</p>
+        <div className="glass p-4 rounded-lg border border-purple-500/30">
+          <p className="text-sm text-muted-foreground">Inward Import Pending</p>
+          <p className="text-2xl font-bold text-purple-400">{importPending}</p>
         </div>
         <div className="glass p-4 rounded-lg border border-amber-500/30">
           <p className="text-sm text-muted-foreground">Local Dispatch Pending</p>
           <p className="text-2xl font-bold text-amber-400">{localPending}</p>
         </div>
-        <div className="glass p-4 rounded-lg border border-purple-500/30">
-          <p className="text-sm text-muted-foreground">Container Pending</p>
-          <p className="text-2xl font-bold text-purple-400">{containerPending}</p>
-        </div>
         <div className="glass p-4 rounded-lg border border-green-500/30">
-          <p className="text-sm text-muted-foreground">Total Active</p>
-          <p className="text-2xl font-bold text-green-400">
-            {inwardTransports.length + outwardLocal.length + outwardContainer.length}
-          </p>
+          <p className="text-sm text-muted-foreground">Export Container Pending</p>
+          <p className="text-2xl font-bold text-green-400">{exportPending}</p>
         </div>
       </div>
 
-      {/* 4 Tabs for 4 Tables */}
+      {/* Tabs */}
       <div className="flex gap-2 mb-6 flex-wrap">
         <Button
-          variant={activeTab === 'inward' ? 'default' : 'outline'}
-          onClick={() => setActiveTab('inward')}
-          data-testid="tab-inward"
+          variant={activeTab === 'inward_exw' ? 'default' : 'outline'}
+          onClick={() => setActiveTab('inward_exw')}
+          className={exwPending > 0 ? 'border-blue-500/50' : ''}
+          data-testid="tab-inward-exw"
         >
           <ArrowDownToLine className="w-4 h-4 mr-2" />
-          Inward (EXW/Import)
-          {inwardPending > 0 && (
-            <span className="ml-2 px-1.5 py-0.5 text-xs rounded bg-blue-500/20 text-blue-400">{inwardPending}</span>
+          Inward (EXW)
+          {exwPending > 0 && (
+            <span className="ml-2 px-1.5 py-0.5 text-xs rounded bg-blue-500/20 text-blue-400">
+              {exwPending}
+            </span>
           )}
         </Button>
         <Button
-          variant={activeTab === 'local' ? 'default' : 'outline'}
-          onClick={() => setActiveTab('local')}
-          data-testid="tab-local"
+          variant={activeTab === 'inward_import' ? 'default' : 'outline'}
+          onClick={() => setActiveTab('inward_import')}
+          className={importPending > 0 ? 'border-purple-500/50' : ''}
+          data-testid="tab-inward-import"
         >
-          <Truck className="w-4 h-4 mr-2" />
-          Outward - Local
+          <Ship className="w-4 h-4 mr-2" />
+          Inward (Import/Logistics)
+          {importPending > 0 && (
+            <span className="ml-2 px-1.5 py-0.5 text-xs rounded bg-purple-500/20 text-purple-400">
+              {importPending}
+            </span>
+          )}
+        </Button>
+        <Button
+          variant={activeTab === 'local_dispatch' ? 'default' : 'outline'}
+          onClick={() => setActiveTab('local_dispatch')}
+          className={localPending > 0 ? 'border-amber-500/50' : ''}
+          data-testid="tab-local-dispatch"
+        >
+          <Home className="w-4 h-4 mr-2" />
+          Local Dispatch
           {localPending > 0 && (
-            <span className="ml-2 px-1.5 py-0.5 text-xs rounded bg-amber-500/20 text-amber-400">{localPending}</span>
+            <span className="ml-2 px-1.5 py-0.5 text-xs rounded bg-amber-500/20 text-amber-400">
+              {localPending}
+            </span>
           )}
         </Button>
         <Button
-          variant={activeTab === 'container' ? 'default' : 'outline'}
-          onClick={() => setActiveTab('container')}
-          data-testid="tab-container"
+          variant={activeTab === 'export_container' ? 'default' : 'outline'}
+          onClick={() => setActiveTab('export_container')}
+          className={exportPending > 0 ? 'border-green-500/50' : ''}
+          data-testid="tab-export-container"
         >
-          <Container className="w-4 h-4 mr-2" />
-          Outward - Container
-          {containerPending > 0 && (
-            <span className="ml-2 px-1.5 py-0.5 text-xs rounded bg-purple-500/20 text-purple-400">{containerPending}</span>
+          <Globe className="w-4 h-4 mr-2" />
+          Export Container
+          {exportPending > 0 && (
+            <span className="ml-2 px-1.5 py-0.5 text-xs rounded bg-green-500/20 text-green-400">
+              {exportPending}
+            </span>
           )}
-        </Button>
-        <Button
-          variant={activeTab === 'dispatch' ? 'default' : 'outline'}
-          onClick={() => setActiveTab('dispatch')}
-          data-testid="tab-dispatch"
-        >
-          <ArrowUpFromLine className="w-4 h-4 mr-2" />
-          Dispatch Summary
         </Button>
       </div>
 
       {loading ? (
         <div className="flex items-center justify-center h-64">
-          <div className="text-muted-foreground">Loading...</div>
+          <RefreshCw className="w-6 h-6 animate-spin text-muted-foreground" />
         </div>
       ) : (
         <>
-          {/* Table 1: Inward Transport */}
-          {activeTab === 'inward' && (
-            <InwardTransportTable 
-              transports={inwardTransports}
-              onStatusUpdate={(id, status) => handleStatusUpdate(id, status, 'inward')}
+          {activeTab === 'inward_exw' && (
+            <InwardEXWTab 
+              transports={inwardEXW} 
+              onStatusUpdate={(id, s) => handleStatusUpdate(id, s, 'inward')}
+              onRefresh={loadData}
             />
           )}
-
-          {/* Table 2: Outward - Local */}
-          {activeTab === 'local' && (
-            <OutwardTransportTable 
-              transports={outwardLocal}
-              title="Local Delivery Transport"
-              onStatusUpdate={(id, status) => handleStatusUpdate(id, status, 'outward')}
+          {activeTab === 'inward_import' && (
+            <InwardImportTab 
+              imports={inwardImport}
+              onRefresh={loadData}
             />
           )}
-
-          {/* Table 3: Outward - Container */}
-          {activeTab === 'container' && (
-            <OutwardTransportTable 
-              transports={outwardContainer}
-              title="Container Shipping Transport"
-              isContainer={true}
-              onStatusUpdate={(id, status) => handleStatusUpdate(id, status, 'outward')}
+          {activeTab === 'local_dispatch' && (
+            <LocalDispatchTab 
+              transports={localDispatch}
+              onStatusUpdate={(id, s) => handleStatusUpdate(id, s, 'outward')}
+              onRefresh={loadData}
             />
           )}
-
-          {/* Table 4: Dispatch Summary */}
-          {activeTab === 'dispatch' && (
-            <DispatchSummary 
-              local={outwardLocal}
-              container={outwardContainer}
+          {activeTab === 'export_container' && (
+            <ExportContainerTab 
+              transports={exportContainer}
+              onStatusUpdate={(id, s) => handleStatusUpdate(id, s, 'outward')}
+              onRefresh={loadData}
             />
           )}
         </>
@@ -184,200 +199,241 @@ const TransportWindowPage = () => {
   );
 };
 
-// Table 1: Inward Transport
-const InwardTransportTable = ({ transports, onStatusUpdate }) => {
-  const [filter, setFilter] = useState('all');
-  
-  const filtered = filter === 'all' 
-    ? transports 
-    : transports.filter(t => t.status === filter);
-
-  const statusColors = {
-    PENDING: 'bg-gray-500/20 text-gray-400',
-    SCHEDULED: 'bg-blue-500/20 text-blue-400',
-    IN_TRANSIT: 'bg-cyan-500/20 text-cyan-400',
-    ARRIVED: 'bg-green-500/20 text-green-400',
-    COMPLETED: 'bg-emerald-500/20 text-emerald-400'
+// ==================== INWARD EXW TAB ====================
+const InwardEXWTab = ({ transports, onStatusUpdate, onRefresh }) => {
+  const getStatusColor = (status) => {
+    switch (status) {
+      case 'PENDING': return 'bg-gray-500/20 text-gray-400';
+      case 'IN_TRANSIT': return 'bg-blue-500/20 text-blue-400';
+      case 'ARRIVED': return 'bg-amber-500/20 text-amber-400';
+      case 'COMPLETED': return 'bg-green-500/20 text-green-400';
+      default: return 'bg-gray-500/20 text-gray-400';
+    }
   };
 
   return (
-    <div className="space-y-4">
-      <div className="flex justify-between items-center">
-        <h2 className="text-lg font-semibold">Inward Transport (EXW / Post-Import)</h2>
-        <div className="flex gap-2">
-          {['all', 'PENDING', 'SCHEDULED', 'IN_TRANSIT', 'ARRIVED'].map(status => (
-            <Button
-              key={status}
-              size="sm"
-              variant={filter === status ? 'default' : 'outline'}
-              onClick={() => setFilter(status)}
-            >
-              {status === 'all' ? 'All' : status.replace(/_/g, ' ')}
-            </Button>
-          ))}
+    <div className="glass rounded-lg border border-border">
+      <div className="p-4 border-b border-border flex justify-between items-center">
+        <div>
+          <h2 className="text-lg font-semibold flex items-center gap-2">
+            <ArrowDownToLine className="w-5 h-5 text-blue-400" />
+            Inward Transport (EXW)
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            Supplier-arranged transport to our location (EXW incoterm)
+          </p>
         </div>
+        <Button variant="outline" size="sm" onClick={onRefresh}>
+          <RefreshCw className="w-4 h-4 mr-2" />
+          Refresh
+        </Button>
       </div>
 
-      <div className="glass rounded-lg border border-border overflow-hidden">
-        <table className="w-full">
-          <thead className="bg-muted/30">
-            <tr>
-              <th className="p-3 text-left text-xs font-medium text-muted-foreground">Transport #</th>
-              <th className="p-3 text-left text-xs font-medium text-muted-foreground">PO Reference</th>
-              <th className="p-3 text-left text-xs font-medium text-muted-foreground">Supplier</th>
-              <th className="p-3 text-left text-xs font-medium text-muted-foreground">Incoterm</th>
-              <th className="p-3 text-left text-xs font-medium text-muted-foreground">Source</th>
-              <th className="p-3 text-left text-xs font-medium text-muted-foreground">Vehicle</th>
-              <th className="p-3 text-left text-xs font-medium text-muted-foreground">ETA</th>
-              <th className="p-3 text-left text-xs font-medium text-muted-foreground">Status</th>
-              <th className="p-3 text-left text-xs font-medium text-muted-foreground">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.length === 0 ? (
+      {transports.length === 0 ? (
+        <div className="p-8 text-center">
+          <Truck className="w-12 h-12 text-muted-foreground mx-auto mb-4 opacity-50" />
+          <p className="text-muted-foreground">No EXW inward transports</p>
+        </div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-muted/30">
               <tr>
-                <td colSpan={9} className="p-8 text-center text-muted-foreground">
-                  <ArrowDownToLine className="w-12 h-12 mx-auto mb-4 opacity-30" />
-                  <p>No inward transports</p>
-                </td>
+                <th className="p-3 text-left text-xs font-medium text-muted-foreground">Transport #</th>
+                <th className="p-3 text-left text-xs font-medium text-muted-foreground">PO Number</th>
+                <th className="p-3 text-left text-xs font-medium text-muted-foreground">Supplier</th>
+                <th className="p-3 text-left text-xs font-medium text-muted-foreground">Incoterm</th>
+                <th className="p-3 text-left text-xs font-medium text-muted-foreground">Vehicle</th>
+                <th className="p-3 text-left text-xs font-medium text-muted-foreground">Status</th>
+                <th className="p-3 text-left text-xs font-medium text-muted-foreground">Actions</th>
               </tr>
-            ) : (
-              filtered.map(transport => (
-                <tr key={transport.id} className="border-t border-border/50 hover:bg-muted/10">
-                  <td className="p-3 font-medium font-mono">{transport.transport_number}</td>
-                  <td className="p-3 text-blue-400">{transport.po_number}</td>
-                  <td className="p-3">{transport.supplier_name}</td>
+            </thead>
+            <tbody>
+              {transports.map((transport) => (
+                <tr key={transport.id} className="border-b border-border/50 hover:bg-muted/10">
+                  <td className="p-3 font-mono font-medium">{transport.transport_number}</td>
+                  <td className="p-3 text-blue-400">{transport.po_number || '-'}</td>
+                  <td className="p-3">{transport.supplier_name || '-'}</td>
                   <td className="p-3">
-                    <span className="px-2 py-0.5 rounded text-xs bg-cyan-500/20 text-cyan-400">
-                      {transport.incoterm}
-                    </span>
-                  </td>
-                  <td className="p-3">
-                    <span className={`px-2 py-0.5 rounded text-xs ${
-                      transport.source === 'IMPORT' ? 'bg-purple-500/20 text-purple-400' : 'bg-blue-500/20 text-blue-400'
-                    }`}>
-                      {transport.source}
-                    </span>
+                    <Badge className="bg-blue-500/20 text-blue-400">EXW</Badge>
                   </td>
                   <td className="p-3">{transport.vehicle_number || '-'}</td>
-                  <td className="p-3">{transport.eta ? new Date(transport.eta).toLocaleDateString() : '-'}</td>
                   <td className="p-3">
-                    <span className={`px-2 py-0.5 rounded text-xs ${statusColors[transport.status]}`}>
+                    <Badge className={getStatusColor(transport.status)}>
                       {transport.status}
-                    </span>
+                    </Badge>
                   </td>
                   <td className="p-3">
                     <div className="flex gap-1">
                       {transport.status === 'PENDING' && (
-                        <Button size="sm" onClick={() => onStatusUpdate(transport.id, 'SCHEDULED')}>
-                          Schedule
-                        </Button>
-                      )}
-                      {transport.status === 'SCHEDULED' && (
                         <Button size="sm" onClick={() => onStatusUpdate(transport.id, 'IN_TRANSIT')}>
-                          Dispatch
+                          Mark In Transit
                         </Button>
                       )}
                       {transport.status === 'IN_TRANSIT' && (
-                        <Button size="sm" onClick={() => onStatusUpdate(transport.id, 'ARRIVED')} className="bg-green-500 hover:bg-green-600">
-                          Arrived
-                        </Button>
-                      )}
-                      {transport.status === 'ARRIVED' && (
-                        <Button size="sm" onClick={() => onStatusUpdate(transport.id, 'COMPLETED')} className="bg-emerald-500 hover:bg-emerald-600">
-                          Complete
+                        <Button size="sm" onClick={() => onStatusUpdate(transport.id, 'ARRIVED')}>
+                          Mark Arrived
                         </Button>
                       )}
                     </div>
                   </td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 };
 
-// Table 2 & 3: Outward Transport (Local / Container)
-const OutwardTransportTable = ({ transports, title, isContainer = false, onStatusUpdate }) => {
-  const [filter, setFilter] = useState('all');
-  
-  const filtered = filter === 'all' 
-    ? transports 
-    : transports.filter(t => t.status === filter);
-
-  const statusColors = {
-    PENDING: 'bg-gray-500/20 text-gray-400',
-    LOADING: 'bg-amber-500/20 text-amber-400',
-    DISPATCHED: 'bg-blue-500/20 text-blue-400',
-    DELIVERED: 'bg-green-500/20 text-green-400'
+// ==================== INWARD IMPORT TAB ====================
+const InwardImportTab = ({ imports, onRefresh }) => {
+  const getStatusColor = (status) => {
+    switch (status) {
+      case 'PENDING': return 'bg-gray-500/20 text-gray-400';
+      case 'DOCUMENTS_PENDING': return 'bg-amber-500/20 text-amber-400';
+      case 'CUSTOMS_CLEARANCE': return 'bg-purple-500/20 text-purple-400';
+      case 'IN_TRANSIT': return 'bg-blue-500/20 text-blue-400';
+      case 'ARRIVED': return 'bg-green-500/20 text-green-400';
+      default: return 'bg-gray-500/20 text-gray-400';
+    }
   };
 
   return (
-    <div className="space-y-4">
-      <div className="flex justify-between items-center">
-        <h2 className="text-lg font-semibold">{title}</h2>
-        <div className="flex gap-2">
-          {['all', 'PENDING', 'LOADING', 'DISPATCHED', 'DELIVERED'].map(status => (
-            <Button
-              key={status}
-              size="sm"
-              variant={filter === status ? 'default' : 'outline'}
-              onClick={() => setFilter(status)}
-            >
-              {status === 'all' ? 'All' : status}
-            </Button>
-          ))}
+    <div className="glass rounded-lg border border-border">
+      <div className="p-4 border-b border-border flex justify-between items-center">
+        <div>
+          <h2 className="text-lg font-semibold flex items-center gap-2">
+            <Ship className="w-5 h-5 text-purple-400" />
+            Inward Transport (Import/Logistics)
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            International imports with FOB/CFR/CIF incoterms
+          </p>
         </div>
+        <Button variant="outline" size="sm" onClick={onRefresh}>
+          <RefreshCw className="w-4 h-4 mr-2" />
+          Refresh
+        </Button>
       </div>
 
-      <div className="glass rounded-lg border border-border overflow-hidden">
-        <table className="w-full">
-          <thead className="bg-muted/30">
-            <tr>
-              <th className="p-3 text-left text-xs font-medium text-muted-foreground">Transport #</th>
-              <th className="p-3 text-left text-xs font-medium text-muted-foreground">DO / Job</th>
-              <th className="p-3 text-left text-xs font-medium text-muted-foreground">Customer</th>
-              {isContainer && (
-                <th className="p-3 text-left text-xs font-medium text-muted-foreground">Container #</th>
-              )}
-              <th className="p-3 text-left text-xs font-medium text-muted-foreground">Vehicle</th>
-              <th className="p-3 text-left text-xs font-medium text-muted-foreground">Destination</th>
-              <th className="p-3 text-left text-xs font-medium text-muted-foreground">Dispatch Date</th>
-              <th className="p-3 text-left text-xs font-medium text-muted-foreground">Status</th>
-              <th className="p-3 text-left text-xs font-medium text-muted-foreground">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.length === 0 ? (
+      {imports.length === 0 ? (
+        <div className="p-8 text-center">
+          <Ship className="w-12 h-12 text-muted-foreground mx-auto mb-4 opacity-50" />
+          <p className="text-muted-foreground">No import shipments</p>
+        </div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-muted/30">
               <tr>
-                <td colSpan={isContainer ? 10 : 9} className="p-8 text-center text-muted-foreground">
-                  {isContainer ? (
-                    <Container className="w-12 h-12 mx-auto mb-4 opacity-30" />
-                  ) : (
-                    <Truck className="w-12 h-12 mx-auto mb-4 opacity-30" />
-                  )}
-                  <p>No {isContainer ? 'container' : 'local'} transports</p>
-                </td>
+                <th className="p-3 text-left text-xs font-medium text-muted-foreground">Import #</th>
+                <th className="p-3 text-left text-xs font-medium text-muted-foreground">PO Number</th>
+                <th className="p-3 text-left text-xs font-medium text-muted-foreground">Supplier</th>
+                <th className="p-3 text-left text-xs font-medium text-muted-foreground">Incoterm</th>
+                <th className="p-3 text-left text-xs font-medium text-muted-foreground">Documents</th>
+                <th className="p-3 text-left text-xs font-medium text-muted-foreground">Status</th>
               </tr>
-            ) : (
-              filtered.map(transport => (
-                <tr key={transport.id} className="border-t border-border/50 hover:bg-muted/10">
-                  <td className="p-3 font-medium font-mono">{transport.transport_number}</td>
-                  <td className="p-3 text-amber-400">{transport.do_number || transport.job_number}</td>
-                  <td className="p-3">{transport.customer_name}</td>
-                  {isContainer && (
-                    <td className="p-3 font-mono">{transport.container_number || '-'}</td>
-                  )}
+            </thead>
+            <tbody>
+              {imports.map((imp) => {
+                const docs = imp.document_checklist || {};
+                const docsComplete = Object.values(docs).filter(Boolean).length;
+                const docsTotal = Object.keys(docs).length;
+                
+                return (
+                  <tr key={imp.id} className="border-b border-border/50 hover:bg-muted/10">
+                    <td className="p-3 font-mono font-medium">{imp.import_number}</td>
+                    <td className="p-3 text-purple-400">{imp.po_number || '-'}</td>
+                    <td className="p-3">{imp.supplier_name || '-'}</td>
+                    <td className="p-3">
+                      <Badge className="bg-purple-500/20 text-purple-400">
+                        {imp.incoterm || 'FOB'}
+                      </Badge>
+                    </td>
+                    <td className="p-3">
+                      <Badge className={docsComplete === docsTotal ? 'bg-green-500/20 text-green-400' : 'bg-amber-500/20 text-amber-400'}>
+                        {docsComplete}/{docsTotal} docs
+                      </Badge>
+                    </td>
+                    <td className="p-3">
+                      <Badge className={getStatusColor(imp.status)}>
+                        {imp.status}
+                      </Badge>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ==================== LOCAL DISPATCH TAB ====================
+const LocalDispatchTab = ({ transports, onStatusUpdate, onRefresh }) => {
+  const getStatusColor = (status) => {
+    switch (status) {
+      case 'PENDING': return 'bg-gray-500/20 text-gray-400';
+      case 'LOADING': return 'bg-amber-500/20 text-amber-400';
+      case 'DISPATCHED': return 'bg-blue-500/20 text-blue-400';
+      case 'DELIVERED': return 'bg-green-500/20 text-green-400';
+      default: return 'bg-gray-500/20 text-gray-400';
+    }
+  };
+
+  return (
+    <div className="glass rounded-lg border border-border">
+      <div className="p-4 border-b border-border flex justify-between items-center">
+        <div>
+          <h2 className="text-lg font-semibold flex items-center gap-2">
+            <Home className="w-5 h-5 text-amber-400" />
+            Local Dispatch
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            Local deliveries via tanker/trailer
+          </p>
+        </div>
+        <Button variant="outline" size="sm" onClick={onRefresh}>
+          <RefreshCw className="w-4 h-4 mr-2" />
+          Refresh
+        </Button>
+      </div>
+
+      {transports.length === 0 ? (
+        <div className="p-8 text-center">
+          <Truck className="w-12 h-12 text-muted-foreground mx-auto mb-4 opacity-50" />
+          <p className="text-muted-foreground">No local dispatches</p>
+        </div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-muted/30">
+              <tr>
+                <th className="p-3 text-left text-xs font-medium text-muted-foreground">Transport #</th>
+                <th className="p-3 text-left text-xs font-medium text-muted-foreground">Job Orders</th>
+                <th className="p-3 text-left text-xs font-medium text-muted-foreground">Customer</th>
+                <th className="p-3 text-left text-xs font-medium text-muted-foreground">Vehicle</th>
+                <th className="p-3 text-left text-xs font-medium text-muted-foreground">Status</th>
+                <th className="p-3 text-left text-xs font-medium text-muted-foreground">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {transports.map((transport) => (
+                <tr key={transport.id} className="border-b border-border/50 hover:bg-muted/10">
+                  <td className="p-3 font-mono font-medium">{transport.transport_number}</td>
+                  <td className="p-3 text-amber-400">
+                    {transport.job_numbers?.join(', ') || '-'}
+                  </td>
+                  <td className="p-3">{transport.customer_name || '-'}</td>
                   <td className="p-3">{transport.vehicle_number || '-'}</td>
-                  <td className="p-3 text-sm">{transport.destination || '-'}</td>
-                  <td className="p-3">{transport.dispatch_date ? new Date(transport.dispatch_date).toLocaleDateString() : '-'}</td>
                   <td className="p-3">
-                    <span className={`px-2 py-0.5 rounded text-xs ${statusColors[transport.status]}`}>
+                    <Badge className={getStatusColor(transport.status)}>
                       {transport.status}
-                    </span>
+                    </Badge>
                   </td>
                   <td className="p-3">
                     <div className="flex gap-1">
@@ -387,106 +443,110 @@ const OutwardTransportTable = ({ transports, title, isContainer = false, onStatu
                         </Button>
                       )}
                       {transport.status === 'LOADING' && (
-                        <Button size="sm" onClick={() => onStatusUpdate(transport.id, 'DISPATCHED')} className="bg-blue-500 hover:bg-blue-600">
+                        <Button size="sm" onClick={() => onStatusUpdate(transport.id, 'DISPATCHED')}>
                           Dispatch
-                        </Button>
-                      )}
-                      {transport.status === 'DISPATCHED' && (
-                        <Button size="sm" onClick={() => onStatusUpdate(transport.id, 'DELIVERED')} className="bg-green-500 hover:bg-green-600">
-                          Delivered
                         </Button>
                       )}
                     </div>
                   </td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 };
 
-// Table 4: Dispatch Summary
-const DispatchSummary = ({ local, container }) => {
-  const allOutward = [...local, ...container].sort((a, b) => 
-    new Date(b.created_at) - new Date(a.created_at)
-  );
-
-  const todayDispatched = allOutward.filter(t => {
-    if (!t.dispatch_date) return false;
-    const today = new Date().toISOString().split('T')[0];
-    return t.dispatch_date.startsWith(today);
-  });
-
-  const pending = allOutward.filter(t => t.status === 'PENDING' || t.status === 'LOADING');
-  const delivered = allOutward.filter(t => t.status === 'DELIVERED');
+// ==================== EXPORT CONTAINER TAB ====================
+const ExportContainerTab = ({ transports, onStatusUpdate, onRefresh }) => {
+  const getStatusColor = (status) => {
+    switch (status) {
+      case 'PENDING': return 'bg-gray-500/20 text-gray-400';
+      case 'LOADING': return 'bg-amber-500/20 text-amber-400';
+      case 'DISPATCHED': return 'bg-blue-500/20 text-blue-400';
+      case 'AT_PORT': return 'bg-purple-500/20 text-purple-400';
+      case 'SHIPPED': return 'bg-green-500/20 text-green-400';
+      default: return 'bg-gray-500/20 text-gray-400';
+    }
+  };
 
   return (
-    <div className="space-y-6">
-      <h2 className="text-lg font-semibold">Dispatch Summary</h2>
-
-      {/* Summary Cards */}
-      <div className="grid grid-cols-4 gap-4">
-        <div className="glass p-4 rounded-lg border border-blue-500/30">
-          <p className="text-sm text-muted-foreground">Today's Dispatches</p>
-          <p className="text-2xl font-bold text-blue-400">{todayDispatched.length}</p>
+    <div className="glass rounded-lg border border-border">
+      <div className="p-4 border-b border-border flex justify-between items-center">
+        <div>
+          <h2 className="text-lg font-semibold flex items-center gap-2">
+            <Globe className="w-5 h-5 text-green-400" />
+            Export Container
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            Container shipments for export orders
+          </p>
         </div>
-        <div className="glass p-4 rounded-lg border border-amber-500/30">
-          <p className="text-sm text-muted-foreground">Pending Dispatch</p>
-          <p className="text-2xl font-bold text-amber-400">{pending.length}</p>
-        </div>
-        <div className="glass p-4 rounded-lg border border-purple-500/30">
-          <p className="text-sm text-muted-foreground">Local Orders</p>
-          <p className="text-2xl font-bold text-purple-400">{local.length}</p>
-        </div>
-        <div className="glass p-4 rounded-lg border border-cyan-500/30">
-          <p className="text-sm text-muted-foreground">Container Shipments</p>
-          <p className="text-2xl font-bold text-cyan-400">{container.length}</p>
-        </div>
+        <Button variant="outline" size="sm" onClick={onRefresh}>
+          <RefreshCw className="w-4 h-4 mr-2" />
+          Refresh
+        </Button>
       </div>
 
-      {/* Recent Activity */}
-      <div className="glass rounded-lg border border-border">
-        <div className="p-4 border-b border-border">
-          <h3 className="font-semibold">Recent Dispatch Activity</h3>
+      {transports.length === 0 ? (
+        <div className="p-8 text-center">
+          <Container className="w-12 h-12 text-muted-foreground mx-auto mb-4 opacity-50" />
+          <p className="text-muted-foreground">No export containers</p>
         </div>
-        <div className="p-4 space-y-3 max-h-[400px] overflow-y-auto">
-          {allOutward.slice(0, 20).map(transport => (
-            <div key={transport.id} className="flex items-center justify-between p-3 rounded bg-muted/10">
-              <div className="flex items-center gap-3">
-                {transport.transport_type === 'CONTAINER' ? (
-                  <Container className="w-5 h-5 text-purple-400" />
-                ) : (
-                  <Truck className="w-5 h-5 text-amber-400" />
-                )}
-                <div>
-                  <div className="font-medium">{transport.transport_number}</div>
-                  <div className="text-sm text-muted-foreground">{transport.customer_name}</div>
-                </div>
-              </div>
-              <div className="text-right">
-                <div className={`px-2 py-0.5 rounded text-xs ${
-                  transport.status === 'DELIVERED' ? 'bg-green-500/20 text-green-400' :
-                  transport.status === 'DISPATCHED' ? 'bg-blue-500/20 text-blue-400' :
-                  'bg-amber-500/20 text-amber-400'
-                }`}>
-                  {transport.status}
-                </div>
-                <div className="text-xs text-muted-foreground mt-1">
-                  {transport.transport_type}
-                </div>
-              </div>
-            </div>
-          ))}
-          {allOutward.length === 0 && (
-            <div className="text-center text-muted-foreground py-8">
-              No dispatch activity
-            </div>
-          )}
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-muted/30">
+              <tr>
+                <th className="p-3 text-left text-xs font-medium text-muted-foreground">Transport #</th>
+                <th className="p-3 text-left text-xs font-medium text-muted-foreground">Container #</th>
+                <th className="p-3 text-left text-xs font-medium text-muted-foreground">Job Orders</th>
+                <th className="p-3 text-left text-xs font-medium text-muted-foreground">Customer</th>
+                <th className="p-3 text-left text-xs font-medium text-muted-foreground">Destination</th>
+                <th className="p-3 text-left text-xs font-medium text-muted-foreground">Status</th>
+                <th className="p-3 text-left text-xs font-medium text-muted-foreground">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {transports.map((transport) => (
+                <tr key={transport.id} className="border-b border-border/50 hover:bg-muted/10">
+                  <td className="p-3 font-mono font-medium">{transport.transport_number}</td>
+                  <td className="p-3 font-mono text-green-400">{transport.container_number || '-'}</td>
+                  <td className="p-3">{transport.job_numbers?.join(', ') || '-'}</td>
+                  <td className="p-3">{transport.customer_name || '-'}</td>
+                  <td className="p-3">{transport.destination || '-'}</td>
+                  <td className="p-3">
+                    <Badge className={getStatusColor(transport.status)}>
+                      {transport.status}
+                    </Badge>
+                  </td>
+                  <td className="p-3">
+                    <div className="flex gap-1">
+                      {transport.status === 'PENDING' && (
+                        <Button size="sm" onClick={() => onStatusUpdate(transport.id, 'LOADING')}>
+                          Start Loading
+                        </Button>
+                      )}
+                      {transport.status === 'LOADING' && (
+                        <Button size="sm" onClick={() => onStatusUpdate(transport.id, 'DISPATCHED')}>
+                          Dispatch
+                        </Button>
+                      )}
+                      {transport.status === 'DISPATCHED' && (
+                        <Button size="sm" onClick={() => onStatusUpdate(transport.id, 'AT_PORT')}>
+                          At Port
+                        </Button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
-      </div>
+      )}
     </div>
   );
 };
