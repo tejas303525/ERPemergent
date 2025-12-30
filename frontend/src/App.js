@@ -35,6 +35,9 @@ import ImportWindowPage from './pages/ImportWindowPage';
 import UnifiedProductionSchedulePage from './pages/UnifiedProductionSchedulePage';
 import SecurityQCPage from './pages/SecurityQCPage';
 import QCInspectionPage from './pages/QCInspectionPage';
+import SettingsPage from './pages/SettingsPage';
+import TransportOperationPage from './pages/TransportOperationPage';
+import TransportPlannerPage from './pages/TransportPlannerPage';
 
 // Layout
 import MainLayout from './components/layout/MainLayout';
