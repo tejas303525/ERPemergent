@@ -7,7 +7,18 @@ import requests
 import os
 from datetime import datetime, timedelta
 
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
+# Read from frontend .env file
+def get_backend_url():
+    try:
+        with open('/app/frontend/.env', 'r') as f:
+            for line in f:
+                if line.startswith('REACT_APP_BACKEND_URL='):
+                    return line.split('=')[1].strip()
+    except:
+        pass
+    return 'https://factory-erp-next.preview.emergentagent.com'
+
+BASE_URL = get_backend_url()
 
 class TestAuthentication:
     """Test authentication endpoints"""
