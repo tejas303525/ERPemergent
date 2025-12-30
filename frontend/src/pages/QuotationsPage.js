@@ -487,7 +487,20 @@ export default function QuotationsPage() {
                     <MapPin className="w-4 h-4 text-amber-400" />
                     Local Delivery Details
                   </h3>
-                  <div className="grid grid-cols-3 gap-4">
+                  <div className="grid grid-cols-4 gap-4">
+                    <div>
+                      <Label>Incoterm</Label>
+                      <Select value={form.incoterm} onValueChange={(v) => setForm({...form, incoterm: v})}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select incoterm" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {INCOTERMS.map(i => (
+                            <SelectItem key={i} value={i}>{i}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
                     <div>
                       <Label>Point of Loading</Label>
                       <Input
