@@ -464,6 +464,38 @@ export default function ShippingPage() {
 
             <div className="form-grid">
               <div className="form-field">
+                <Label>Pull Out Date</Label>
+                <Input
+                  type="date"
+                  value={croForm.pull_out_date}
+                  onChange={(e) => setCroForm({...croForm, pull_out_date: e.target.value})}
+                  data-testid="pull-out-date-input"
+                />
+                <p className="text-xs text-muted-foreground mt-1">Container pull out from depot</p>
+              </div>
+              <div className="form-field">
+                <Label>SI Cutoff (Shipping Instructions)</Label>
+                <Input
+                  type="datetime-local"
+                  value={croForm.si_cutoff}
+                  onChange={(e) => setCroForm({...croForm, si_cutoff: e.target.value})}
+                  data-testid="si-cutoff-input"
+                />
+              </div>
+            </div>
+
+            <div className="form-grid">
+              <div className="form-field">
+                <Label>Gate In Date</Label>
+                <Input
+                  type="date"
+                  value={croForm.gate_in_date}
+                  onChange={(e) => setCroForm({...croForm, gate_in_date: e.target.value})}
+                  data-testid="gate-in-date-input"
+                />
+                <p className="text-xs text-muted-foreground mt-1">Container gate in at port</p>
+              </div>
+              <div className="form-field">
                 <Label>Gate Cutoff</Label>
                 <Input
                   type="datetime-local"
@@ -471,6 +503,9 @@ export default function ShippingPage() {
                   onChange={(e) => setCroForm({...croForm, gate_cutoff: e.target.value})}
                 />
               </div>
+            </div>
+
+            <div className="form-grid">
               <div className="form-field">
                 <Label>VGM Cutoff</Label>
                 <Input
@@ -479,11 +514,21 @@ export default function ShippingPage() {
                   onChange={(e) => setCroForm({...croForm, vgm_cutoff: e.target.value})}
                 />
               </div>
+              <div className="form-field">
+                <Label>Freight Charges (Total)</Label>
+                <Input
+                  type="number"
+                  value={croForm.freight_charges || ''}
+                  onChange={(e) => setCroForm({...croForm, freight_charges: parseFloat(e.target.value)})}
+                  placeholder="Total freight cost"
+                  data-testid="freight-charges-input"
+                />
+              </div>
             </div>
 
             <div className="form-grid">
               <div className="form-field">
-                <Label>Freight Rate</Label>
+                <Label>Freight Rate (per container)</Label>
                 <Input
                   type="number"
                   value={croForm.freight_rate || ''}
