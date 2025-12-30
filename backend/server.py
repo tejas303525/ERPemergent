@@ -6318,8 +6318,20 @@ async def add_packaging_type(data: dict, current_user: dict = Depends(get_curren
         "type": data.get("type", "other")
     }
     
-    await db.packaging_types.insert_one(packaging)
-    return await db.packaging_types.find_one({"id": packaging["id"]}, {"_id": 0})
+    await db.packaging_types.insert_one({**packaging})
+    return packaging
+
+@api_router.put("/settings/packaging-types/{packaging_id}")
+async def update_packaging_type(packaging_id: str, data: dict, current_user: dict = Depends(get_current_user)):
+    """Update a packaging type"""
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Only admin can update packaging types")
+    
+    update_data = {k: v for k, v in data.items() if v is not None and k != "id"}
+    result = await db.packaging_types.update_one({"id": packaging_id}, {"$set": update_data})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Packaging type not found")
+    return await db.packaging_types.find_one({"id": packaging_id}, {"_id": 0})
 
 # ==================== STOCK MANAGEMENT ====================
 
