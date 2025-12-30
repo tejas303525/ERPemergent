@@ -4713,7 +4713,8 @@ async def create_inward_checklist(
         "created_at": datetime.now(timezone.utc).isoformat()
     }
     await db.security_checklists.insert_one(checklist)
-    return checklist
+    # Return without _id to avoid ObjectId serialization error
+    return await db.security_checklists.find_one({"id": checklist["id"]}, {"_id": 0})
 
 @api_router.put("/security/checklist/{checklist_id}/complete")
 async def complete_security_checklist(
@@ -5496,7 +5497,8 @@ async def create_security_checklist(data: SecurityChecklistCreate, current_user:
     }
     
     await db.security_checklists.insert_one(checklist)
-    return checklist
+    # Return without _id to avoid ObjectId serialization error
+    return await db.security_checklists.find_one({"id": checklist["id"]}, {"_id": 0})
 
 @api_router.put("/security/checklists/{checklist_id}")
 async def update_security_checklist(checklist_id: str, data: SecurityChecklistUpdate, current_user: dict = Depends(get_current_user)):
