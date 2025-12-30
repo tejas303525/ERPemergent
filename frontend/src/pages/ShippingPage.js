@@ -50,6 +50,10 @@ export default function ShippingPage() {
     vgm_cutoff: '',
     freight_rate: 0,
     freight_currency: 'USD',
+    freight_charges: 0,
+    pull_out_date: '',
+    si_cutoff: '',
+    gate_in_date: '',
   });
 
   useEffect(() => {
@@ -122,6 +126,10 @@ export default function ShippingPage() {
       vgm_cutoff: booking.vgm_cutoff || '',
       freight_rate: booking.freight_rate || 0,
       freight_currency: booking.freight_currency || 'USD',
+      freight_charges: booking.freight_charges || 0,
+      pull_out_date: booking.pull_out_date || '',
+      si_cutoff: booking.si_cutoff || '',
+      gate_in_date: booking.gate_in_date || '',
     });
     setCroOpen(true);
   };
