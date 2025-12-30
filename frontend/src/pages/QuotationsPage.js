@@ -423,6 +423,21 @@ export default function QuotationsPage() {
                       </Select>
                     </div>
                     <div>
+                      <Label>Number of Containers</Label>
+                      <Input
+                        type="number"
+                        min={1}
+                        value={form.container_count}
+                        onChange={(e) => setForm({...form, container_count: parseInt(e.target.value) || 1})}
+                        placeholder="1"
+                      />
+                      {form.container_type && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Total Capacity: {(CONTAINER_TYPES.find(c => c.value === form.container_type)?.max_mt || 0) * form.container_count} MT
+                        </p>
+                      )}
+                    </div>
+                    <div>
                       <Label>Incoterm</Label>
                       <Select value={form.incoterm} onValueChange={(v) => setForm({...form, incoterm: v})}>
                         <SelectTrigger>
