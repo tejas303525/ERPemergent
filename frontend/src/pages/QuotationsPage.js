@@ -666,7 +666,7 @@ export default function QuotationsPage() {
 
               {/* Required Documents */}
               <div className="border-t border-border pt-4">
-                <h3 className="font-semibold mb-3">Documents to be Submitted</h3>
+                <h3 className="font-semibold mb-3">Documents that need to be submitted</h3>
                 <div className="grid grid-cols-3 gap-2">
                   {DOCUMENT_TYPES.map(doc => (
                     <label key={doc.id} className="flex items-center gap-2 p-2 rounded hover:bg-muted/20 cursor-pointer">
@@ -679,6 +679,20 @@ export default function QuotationsPage() {
                   ))}
                 </div>
               </div>
+
+              {/* Overweight Warning */}
+              {isOverweight && (
+                <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 flex items-center gap-2">
+                  <AlertTriangle className="w-5 h-5 text-red-400" />
+                  <div>
+                    <p className="text-red-400 font-medium">Max Cargo Exceeded!</p>
+                    <p className="text-sm text-red-400/80">
+                      Total weight ({totalWeightMT.toFixed(2)} MT) exceeds container capacity ({maxCargoCapacity} MT). 
+                      Please increase the number of containers.
+                    </p>
+                  </div>
+                </div>
+              )}
 
               {/* Notes */}
               <div>
