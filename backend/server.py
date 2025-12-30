@@ -4484,12 +4484,14 @@ async def finance_approve_po(po_id: str, current_user: dict = Depends(get_curren
             "po_id": po_id,
             "po_number": po.get("po_number"),
             "supplier_name": po.get("supplier_name"),
+            "items": po.get("items", []),
             "incoterm": incoterm,
             "source": "PO_EXW",
             "status": "PENDING",
             "created_at": datetime.now(timezone.utc).isoformat()
         }
-        await db.transport_inward.insert_one(transport)
+        # Use copy for insert to prevent _id mutation
+        await db.transport_inward.insert_one({**transport})
         route_result["routed_to"] = "TRANSPORTATION_INWARD"
         route_result["transport_number"] = transport_number
         
@@ -4515,11 +4517,13 @@ async def finance_approve_po(po_id: str, current_user: dict = Depends(get_curren
             "ref_id": po_id,
             "ref_number": po.get("po_number"),
             "supplier_name": po.get("supplier_name"),
+            "items": po.get("items", []),
             "checklist_type": "INWARD",
             "status": "PENDING",
             "created_at": datetime.now(timezone.utc).isoformat()
         }
-        await db.security_checklists.insert_one(checklist)
+        # Use copy for insert to prevent _id mutation
+        await db.security_checklists.insert_one({**checklist})
         route_result["routed_to"] = "SECURITY_QC"
         route_result["checklist_number"] = checklist_number
         
@@ -4532,18 +4536,19 @@ async def finance_approve_po(po_id: str, current_user: dict = Depends(get_curren
             "po_id": po_id,
             "po_number": po.get("po_number"),
             "supplier_name": po.get("supplier_name"),
+            "items": po.get("items", []),
             "incoterm": incoterm,
             "status": "PENDING",
             "document_checklist": {
-                "bl": False,
-                "invoice": False,
-                "packing_list": False,
-                "coo": False,
-                "inspection_cert": False
+                "delivery_order": False,
+                "bill_of_lading": False,
+                "epda": False,
+                "sira": False
             },
             "created_at": datetime.now(timezone.utc).isoformat()
         }
-        await db.imports.insert_one(import_record)
+        # Use copy for insert to prevent _id mutation
+        await db.imports.insert_one({**import_record})
         route_result["routed_to"] = "IMPORT"
         route_result["import_number"] = import_number
     
