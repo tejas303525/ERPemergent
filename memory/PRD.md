@@ -1,143 +1,158 @@
-# Manufacturing ERP System - PRD
+# Manufacturing ERP System - Product Requirements Document
 
 ## Original Problem Statement
-Build a comprehensive ERP system for a manufacturing plant with complete procurement-to-production-to-dispatch workflow.
+Build a full Manufacturing ERP system based on a detailed mermaid chart with comprehensive modules for:
+- Sales and Quotation Management
+- Production and Job Order Management  
+- Inventory and Procurement
+- Shipping and Logistics
+- Quality Control and Security
+- Finance (Payables/Receivables)
 
-## User Personas (11 Roles)
-- Admin, Sales, Finance, Production, Procurement, Inventory, Security, QC, Shipping, Transport, Documentation
+## Core Requirements
 
----
+### Phase 1 (COMPLETED ✅)
+1. **Unified Production Scheduling** - 600 drums/day capacity with allocation logic
+2. **Transport Window** - 4 tabs (Inward/Outward Raw, Inward/Outward Container)
+3. **Import Window** - Document checklist and tracking
+4. **Incoterm-based PO Routing** - Auto-route based on EXW/DDP/FOB/CFR
+5. **BOM Management** - Product and Packaging BOMs
+6. **Material Availability Check** - Auto-check on quotation approval
 
-## PHASE 1 IMPLEMENTATION - PRODUCTION SCHEDULING FOCUS (December 29, 2025)
+### Phase 2 (COMPLETED ✅) - December 30, 2025
 
-### ✅ Quotation Calculation (FIXED)
-- **Formula**: For packaged items: `(net_weight_kg × qty) / 1000 = MT × unit_price`
-- **Formula**: For Bulk: `quantity × unit_price` (quantity assumed in MT)
-- Added `weight_mt` field to quotation items
-- Example: 100 drums × 200kg = 20 MT × $1500/MT = $30,000
+#### Bug Fixes Implemented
+1. **Quotation Page Enhancements (Bug 1)** ✅
+   - Export Orders: Container types (20ft, 40ft, ISO Tank, Bulk Tankers), Country of destination/origin
+   - Local Orders: Port of loading/discharge, 5% VAT calculation
+   - Payment terms and document checklist (configurable)
+   - All fields reflected in PDF generation
 
-### ✅ Material Availability Check on Quotation Approval
-- When quotation is approved, system checks:
-  1. Raw material availability from product BOM
-  2. Packaging material availability from packaging BOM
-- Creates `material_shortages` records for procurement
-- Notifies procurement team of shortages
+2. **Quotation Approval UI Bug (Bug 2)** ✅
+   - Fixed immediate state update after approval
+   - No longer shows "failed" message on first click
 
-### ✅ Unified Production Schedule (Merged Drum + Production)
-- **Capacity**: 600 drums/day constraint
-- **Spillover**: Jobs exceeding daily capacity move to next day
-- **Material Status**: Shows `material_ready` and `shortage_items` per job
-- **Date Range**: Configurable 7/14/21/30 day view
-- **Utilization**: Shows % capacity used per day
+3. **Job Order Automation (Bug 3)** ✅
+   - Auto-fill product, quantity, packaging from SPA selection
+   - Auto-load BOM from BOM Management module
+   - Real-time material availability check against BOM components
+   - `procurement_required` flag accurately calculated
 
-### ✅ Incoterm-Based PO Routing
-After PO is approved by Finance:
-- **EXW** → Transportation Window (Inward)
-- **DDP** → Security & QC Module
-- **FOB** → Shipping Module
-- **CFR/CIF** → Import Window
+4. **Shipping/Transport Integration (Bug 4)** ✅
+   - Added CRO fields: freight_charges, pull_out_date, si_cutoff, gate_in_date
+   - CRO entry auto-creates transport_outward record
+   - Container bookings appear in Transport Window "Outward - Container" tab
 
-### ✅ Transport Window (4 Tables)
-1. **Inward (EXW/Import)** - Incoming materials from suppliers
-2. **Outward - Local** - Local deliveries
-3. **Outward - Container** - Container shipping
-4. **Dispatch Summary** - Overview of all dispatches
+5. **Procurement Flow Rework (Bug 5)** ✅
+   - Changed from RFQ model to "Generate PO" model
+   - Select shortages → Enter unit price → Generate PO directly
+   - PO immediately appears on Finance Approval page with DRAFT status
+   - Fixed multi-select checkbox bug
+   - Vendors with address autofill
 
-### ✅ Import Window
-- **Status Flow**: PENDING_DOCS → IN_TRANSIT → AT_PORT → CLEARED → COMPLETED
-- **Document Checklist** (8 types):
-  - Required: Commercial Invoice, Packing List, Bill of Lading, COO, COA
-  - Optional: Insurance Certificate, Phytosanitary Certificate, MSDS
-- Auto-creates Transport Inward when completed
+#### New Modules Implemented
+1. **Security Gate Module** (`/security`) ✅
+   - 3 Windows: Inward Transport, Outward Transport, RFQ Window
+   - Security checklist with weighment entry
+   - Vehicle/driver verification
+   - Seal number tracking
+   - Auto-routes to QC after completion
 
-### ✅ BOM Management
-- Product BOMs: Raw materials per KG of finished product
-- Packaging BOMs: Materials per drum
-- Version control with active flag
+2. **QC Inspection Module** (`/qc-inspection`) ✅
+   - 3 Tabs: Pending Inspection, Completed, COA Management
+   - Standard quality tests (appearance, color, moisture, pH, density, purity, viscosity)
+   - Batch number tracking
+   - Pass/Fail workflow
+   - COA (Certificate of Analysis) generation for outward shipments
 
-### ✅ Quotation Net Weight
-- Added `net_weight_kg` field for packaged items
-- Conditional display (only for non-Bulk packaging)
-- Correct calculation in both frontend and backend
+#### Workflow Implementation
+**Inward Flow:**
+Security Checklist + Weight → QC Inspection → GRN → Stock Update → Notify Payables
 
----
+**Outward Flow:**
+Security Checklist + Weight → QC Inspection → Delivery Order → Notify Receivables
+- Local Customer: Tax Invoice
+- International Customer: Commercial Invoice
 
-## PENDING FEATURES (PHASE 2+)
+**Export Documents (Auto-generated for international):**
+- Packing List
+- Certificate of Origin (COO)
+- BL Draft
+- Certificate of Analysis (COA)
 
-### P0 - Critical
-1. Security cargo flow completion (inward checklist → QC)
-2. Document generation (Invoice, DO, COA, Packing List)
-3. Transport PO generation and finance approval
+## Technical Architecture
 
-### P1 - High Priority
-1. Production calendar integration with delivery dates
-2. Auto-scheduling based on material arrival
-3. Shipping window export table (Job Order chronology)
+### Backend
+- **Framework:** FastAPI (Python)
+- **Database:** MongoDB (Motor async driver)
+- **Authentication:** JWT
+- **File:** `/app/backend/server.py` (monolithic, 5000+ lines)
 
-### P2 - Future
-1. Auto-reminder emails
-2. BL draft generation
-3. COO generation
+### Frontend
+- **Framework:** React
+- **Styling:** TailwindCSS
+- **UI Components:** Shadcn/UI
+- **State:** React Context API
+- **HTTP Client:** Axios
 
----
+### Key API Endpoints
+```
+# Phase 2 New Endpoints
+POST /api/purchase-orders/generate - Generate PO directly from shortages
+GET /api/security/dashboard - Security dashboard with stats
+GET /api/security/inward - Inward transports for security check
+GET /api/security/outward - Outward transports for security check
+POST /api/security/checklists - Create security checklist
+PUT /api/security/checklists/{id}/complete - Complete checklist and route to QC
+GET /api/qc/dashboard - QC dashboard with pending inspections
+GET /api/qc/inspections - Get QC inspections
+PUT /api/qc/inspections/{id}/pass - Pass QC inspection (creates GRN or DO)
+PUT /api/qc/inspections/{id}/fail - Fail QC inspection
+POST /api/qc/inspections/{id}/generate-coa - Generate COA for outward shipment
+GET /api/documents/export/{job_id} - Get export documents status
+```
 
-## Database Collections
-- `quotations`, `sales_orders`, `job_orders`
-- `products`, `customers`, `suppliers`
-- `inventory_items`, `inventory_balances`
-- `product_boms`, `product_bom_items`
-- `packaging_boms`, `packaging_bom_items`
-- `purchase_orders`, `rfq`
-- `transport_inward`, `transport_outward`
-- `imports`, `material_shortages`
-- `security_checklists`, `qc_inspections`
-- `payables_bills`, `receivables_invoices`
-- `notifications`
-
----
+### Database Collections
+- `quotations` - Sales quotations with order_type (local/export)
+- `job_orders` - Production jobs with procurement_required flag
+- `shipping_bookings` - Shipping with CRO fields
+- `transport_inward`, `transport_outward` - Transport window records
+- `security_checklists` - Security gate checklists
+- `qc_inspections` - QC inspection records with COA tracking
+- `delivery_orders` - Delivery orders auto-generated from QC pass
+- `grn` - Goods Receipt Notes created from inward QC pass
+- `purchase_orders` - POs with DRAFT status for finance approval
 
 ## Test Credentials
-- **Admin**: admin@erp.com / admin123
-- **Sales**: sales@erp.com / sales123
-- **Finance**: finance@erp.com / finance123
-- **Production**: production@erp.com / production123
+- **Admin:** admin@erp.com / admin123
+- **Finance:** finance@erp.com / finance123
 
----
+## Current State
+- **Backend Status:** Running ✅
+- **Frontend Status:** Running ✅
+- **All Phase 2 Features:** Tested and Working ✅
 
-## KEY DATA FLOWS
+## Test Results (December 30, 2025)
+- Backend: 13/13 tests passed (100%)
+- Frontend: All pages load correctly
+- Security Gate: 2 inward transports pending
+- QC Inspection: 0 pending inspections
+- Procurement: 2 raw material shortages displayed
+- Quotations: 16 total (10 LOCAL, 6 EXPORT)
+- Job Orders: 10 jobs with BOM automation
 
-### Procurement → Finance → Logistics
-```
-Shortages (from BOMs) → RFQ → Quote → PO (DRAFT)
-    → Finance Approve → Send to Vendor
-    → Based on Incoterm:
-        LOCAL (EXW/DDP) → Transport Inward
-        IMPORT (FOB/CFR) → Shipping/Import Window
-```
+## Future Tasks (Backlog)
 
-### Inward Cargo Flow
-```
-PO Received → Security Checklist → Weight
-    → QC Inspection → GRN → Payables Review
-    → AP Posting
-```
+### P1 - High Priority
+1. PDF Generation with new custom fields
+2. Admin Configuration Pages for vendors, payment terms, documents
 
-### Outward Cargo Flow
-```
-Job Complete → Delivery Order → Security Checklist
-    → QC Checklist → Documents → Receivables
-```
+### P2 - Medium Priority
+1. Documentation update (USER_MANUAL.md)
+2. Code refactoring (split server.py into modules)
+3. Email integration for sending POs to vendors
 
----
-
-## TEST CREDENTIALS
-- Admin: admin@erp.com / admin123
-- Finance: finance@erp.com / finance123
-- Production: production@erp.com / production123
-
----
-
-## NOTES
-- SMTP not configured (emails remain QUEUED)
-- Material shortages derived from BOMs only
-- 600 drums/day capacity is hard limit
+### P3 - Low Priority
+1. Dashboard analytics improvements
+2. Mobile responsive enhancements
+3. Bulk operations support
