@@ -40,6 +40,9 @@ export default function JobOrdersPage() {
     priority: 'normal',
     notes: '',
     bom: [],
+    label_confirmation: '',
+    schedule_date: '',
+    schedule_shift: '',
   });
 
   useEffect(() => {
