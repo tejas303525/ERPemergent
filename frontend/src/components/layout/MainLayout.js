@@ -28,6 +28,8 @@ import {
   FileStack,
   Container,
   Globe,
+  Shield,
+  Microscope,
 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { cn } from '../../lib/utils';
@@ -47,6 +49,8 @@ const menuItems = [
   { icon: Truck, label: 'Transport Window', path: '/transport-window', roles: ['admin', 'transport', 'procurement'] },
   { icon: Globe, label: 'Import Window', path: '/import-window', roles: ['admin', 'procurement', 'finance'] },
   { icon: DoorOpen, label: 'Dispatch Gate', path: '/dispatch-gate', roles: ['admin', 'security', 'shipping', 'transport'] },
+  { icon: Shield, label: 'Security Gate', path: '/security', roles: ['admin', 'security'] },
+  { icon: Microscope, label: 'QC Inspection', path: '/qc-inspection', roles: ['admin', 'qc'] },
   { icon: FileCheck, label: 'Documentation', path: '/documentation', roles: ['admin', 'documentation'] },
   { icon: ClipboardCheck, label: 'Quality Control', path: '/qc', roles: ['admin', 'qc'] },
   { icon: ShoppingCart, label: 'Procurement', path: '/procurement', roles: ['admin', 'procurement'] },
