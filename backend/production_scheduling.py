@@ -174,6 +174,8 @@ class PurchaseOrderCreate(BaseModel):
     total_amount: float = 0
     rfq_id: Optional[str] = None
     notes: Optional[str] = None
+    incoterm: str = "EXW"
+    payment_terms: str = "Net 30"
 
 class PurchaseOrder(PurchaseOrderCreate):
     model_config = ConfigDict(extra="ignore")
@@ -189,6 +191,8 @@ class PurchaseOrder(PurchaseOrderCreate):
     rejection_reason: Optional[str] = None
     sent_at: Optional[str] = None
     email_status: str = "NOT_CONFIGURED"  # NOT_CONFIGURED, QUEUED, SENT, FAILED
+    routed_to: Optional[str] = None
+    routed_at: Optional[str] = None
 
 class PurchaseOrderLineCreate(BaseModel):
     po_id: str
