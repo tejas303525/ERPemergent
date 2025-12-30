@@ -38,6 +38,7 @@ import QCInspectionPage from './pages/QCInspectionPage';
 import SettingsPage from './pages/SettingsPage';
 import TransportOperationPage from './pages/TransportOperationPage';
 import TransportPlannerPage from './pages/TransportPlannerPage';
+import StockManagementPage from './pages/StockManagementPage';
 
 // Layout
 import MainLayout from './components/layout/MainLayout';
