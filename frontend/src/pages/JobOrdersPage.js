@@ -15,6 +15,7 @@ import api from '../lib/api';
 
 const PRIORITIES = ['low', 'normal', 'high', 'urgent'];
 const STATUSES = ['pending', 'approved', 'in_production', 'procurement', 'ready_for_dispatch'];
+const SHIFTS = ['Morning (6AM-2PM)', 'Evening (2PM-10PM)', 'Night (10PM-6AM)'];
 
 export default function JobOrdersPage() {
   const { user } = useAuth();
