@@ -304,6 +304,10 @@ class ShippingBookingUpdate(BaseModel):
     vgm_cutoff: Optional[str] = None  # VGM submission cutoff
     freight_rate: Optional[float] = None
     freight_currency: str = "USD"
+    freight_charges: Optional[float] = None  # Total freight charges
+    pull_out_date: Optional[str] = None  # Container pull out date
+    si_cutoff: Optional[str] = None  # SI (Shipping Instructions) cutoff
+    gate_in_date: Optional[str] = None  # Gate in date at port
     status: Optional[str] = None
 
 class ShippingBooking(ShippingBookingCreate):
@@ -318,6 +322,10 @@ class ShippingBooking(ShippingBookingCreate):
     vgm_cutoff: Optional[str] = None
     freight_rate: Optional[float] = None
     freight_currency: str = "USD"
+    freight_charges: Optional[float] = None  # Total freight charges
+    pull_out_date: Optional[str] = None  # Container pull out date
+    si_cutoff: Optional[str] = None  # SI cutoff
+    gate_in_date: Optional[str] = None  # Gate in date
     pickup_date: Optional[str] = None  # Auto-calculated: cutoff - 3 days
     status: str = "pending"  # pending, cro_received, transport_scheduled, loaded, shipped
     created_by: str = ""
