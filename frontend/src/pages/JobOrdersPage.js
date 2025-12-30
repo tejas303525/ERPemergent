@@ -259,6 +259,9 @@ export default function JobOrdersPage() {
       priority: 'normal',
       notes: '',
       bom: [],
+      label_confirmation: '',
+      schedule_date: '',
+      schedule_shift: '',
     });
     setMaterialAvailability([]);
   };
@@ -275,7 +278,7 @@ export default function JobOrdersPage() {
 
   const filteredJobs = statusFilter === 'all' ? jobs : jobs.filter(j => j.status === statusFilter);
 
-  const canManageJobs = ['admin', 'production', 'procurement'].includes(user?.role);
+  const canManageJobs = ['admin', 'production', 'procurement', 'sales'].includes(user?.role);
 
   // Calculate procurement status
   const getProcurementStatus = (job) => {
