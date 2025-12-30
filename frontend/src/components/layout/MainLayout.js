@@ -59,6 +59,9 @@ const menuItems = [
   { icon: Receipt, label: 'Receivables (AR)', path: '/receivables', roles: ['admin', 'finance', 'sales'] },
   { icon: Users, label: 'Customers', path: '/customers', roles: ['admin', 'sales'] },
   { icon: Package, label: 'Products', path: '/products', roles: ['admin', 'inventory', 'sales'] },
+  { icon: Truck, label: 'Transport Operation', path: '/transport-operation', roles: ['admin', 'transport'] },
+  { icon: Container, label: 'Transport Planner', path: '/transport-planner', roles: ['admin', 'transport'] },
+  { icon: FileStack, label: 'Settings', path: '/settings', roles: ['admin'] },
   { icon: UserCog, label: 'User Management', path: '/users', roles: ['admin'] },
 ];
 
