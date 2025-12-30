@@ -278,6 +278,79 @@ const PayablesPage = () => {
             </div>
           )}
 
+          {/* QC Reports Tab */}
+          {activeTab === 'qc_reports' && (
+            <div className="space-y-4">
+              <h2 className="text-xl font-semibold flex items-center gap-2">
+                <ClipboardCheck className="w-5 h-5 text-emerald-500" />
+                QC Inspection Reports
+              </h2>
+              <p className="text-muted-foreground text-sm">
+                Review completed QC inspections for incoming materials before processing payments
+              </p>
+              {qcReports.length === 0 ? (
+                <div className="glass p-8 rounded-lg border border-emerald-500/30 bg-emerald-500/5 text-center">
+                  <ClipboardCheck className="w-12 h-12 text-emerald-500 mx-auto mb-4" />
+                  <p className="text-emerald-400">No completed QC reports</p>
+                </div>
+              ) : (
+                <div className="glass rounded-lg border border-border overflow-hidden">
+                  <table className="w-full">
+                    <thead className="bg-muted/30">
+                      <tr>
+                        <th className="p-3 text-left text-xs font-medium text-muted-foreground">QC #</th>
+                        <th className="p-3 text-left text-xs font-medium text-muted-foreground">Supplier</th>
+                        <th className="p-3 text-left text-xs font-medium text-muted-foreground">Items</th>
+                        <th className="p-3 text-left text-xs font-medium text-muted-foreground">Qty</th>
+                        <th className="p-3 text-left text-xs font-medium text-muted-foreground">Result</th>
+                        <th className="p-3 text-left text-xs font-medium text-muted-foreground">Date</th>
+                        <th className="p-3 text-left text-xs font-medium text-muted-foreground">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {qcReports.map((qc) => (
+                        <tr key={qc.id} className="border-t border-border/50 hover:bg-muted/10">
+                          <td className="p-3 font-mono font-medium">{qc.inspection_number || qc.qc_number}</td>
+                          <td className="p-3">{qc.supplier_name || '-'}</td>
+                          <td className="p-3">
+                            <div className="flex flex-wrap gap-1">
+                              {qc.items?.slice(0, 2).map((item, idx) => (
+                                <Badge key={idx} variant="outline" className="text-xs">
+                                  {item.name || item.product_name}
+                                </Badge>
+                              ))}
+                              {(qc.items?.length || 0) > 2 && (
+                                <Badge variant="outline" className="text-xs">+{qc.items.length - 2}</Badge>
+                              )}
+                            </div>
+                          </td>
+                          <td className="p-3 font-mono">{qc.total_qty || qc.quantity || '-'}</td>
+                          <td className="p-3">
+                            <Badge className={
+                              qc.result === 'PASS' ? 'bg-green-500/20 text-green-400' :
+                              qc.result === 'FAIL' ? 'bg-red-500/20 text-red-400' :
+                              'bg-amber-500/20 text-amber-400'
+                            }>
+                              {qc.result || qc.status}
+                            </Badge>
+                          </td>
+                          <td className="p-3 text-sm text-muted-foreground">
+                            {qc.completed_at ? new Date(qc.completed_at).toLocaleDateString() : '-'}
+                          </td>
+                          <td className="p-3">
+                            <Button size="sm" variant="ghost" onClick={() => setSelectedQCReport(qc)}>
+                              <Eye className="w-4 h-4 mr-1" /> View
+                            </Button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Bills by Type Tabs */}
           {['po_rfq', 'transport', 'shipping', 'import'].includes(activeTab) && (
             <BillsTable 
