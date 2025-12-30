@@ -245,12 +245,12 @@ class TestSecurityChecklist:
         """Test POST /api/security/checklists - should not return 500/520 error"""
         headers = {"Authorization": f"Bearer {admin_token}"}
         
-        # Create a security checklist
+        # Create a security checklist with all required fields
         checklist_data = {
             "ref_type": "INWARD",
             "ref_id": str(uuid.uuid4()),  # Test reference ID
             "ref_number": "TEST-REF-001",
-            "supplier_name": "Test Supplier",
+            "checklist_type": "INWARD",  # Required field
             "vehicle_number": "ABC-1234",
             "driver_name": "Test Driver",
             "notes": "Test checklist for bug fix verification"
@@ -407,22 +407,28 @@ class TestProductionSchedule:
         
         assert response.status_code == 200, f"Unified schedule failed: {response.text}"
         data = response.json()
-        assert isinstance(data, list)
+        
+        # Response is a dict with 'schedule' key
+        assert isinstance(data, dict), "Response should be a dict"
+        assert "schedule" in data, "Response should have 'schedule' key"
+        
+        schedule = data["schedule"]
+        assert isinstance(schedule, list), "Schedule should be a list"
         
         # Check schedule structure
-        if data:
-            day = data[0]
+        if schedule:
+            day = schedule[0]
             assert "date" in day
             assert "drums_capacity" in day
             assert "jobs" in day
             
             # Count jobs by status
             all_jobs = []
-            for day in data:
-                all_jobs.extend(day.get("jobs", []))
+            for day_item in schedule:
+                all_jobs.extend(day_item.get("jobs", []))
             
             in_production = [j for j in all_jobs if j.get("status") == "in_production"]
-            print(f"✓ Unified schedule works: {len(data)} days, {len(all_jobs)} total jobs, {len(in_production)} in_production")
+            print(f"✓ Unified schedule works: {len(schedule)} days, {len(all_jobs)} total jobs, {len(in_production)} in_production")
         else:
             print("✓ Unified schedule endpoint works (no scheduled jobs)")
     
