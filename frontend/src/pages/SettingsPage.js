@@ -6,7 +6,7 @@ import { Badge } from '../components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
 import { 
   Settings, Building, FileText, CreditCard, Container, Users,
-  Plus, Trash2, Save, RefreshCw, Edit, Check, X, MapPin
+  Plus, Trash2, Save, RefreshCw, Edit, Check, X, MapPin, Package
 } from 'lucide-react';
 import { toast } from 'sonner';
 import api from '../lib/api';
@@ -18,6 +18,7 @@ const SettingsPage = () => {
   const [documentTemplates, setDocumentTemplates] = useState([]);
   const [containerTypes, setContainerTypes] = useState([]);
   const [companies, setCompanies] = useState([]);
+  const [packagingTypes, setPackagingTypes] = useState([]);
   const [loading, setLoading] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [editItem, setEditItem] = useState(null);
@@ -29,40 +30,18 @@ const SettingsPage = () => {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [vendorsRes, suppliersRes] = await Promise.all([
+      const [vendorsRes, settingsRes] = await Promise.all([
         api.get('/suppliers'),
         api.get('/settings/all').catch(() => ({ data: {} }))
       ]);
       setVendors(vendorsRes.data || []);
       
-      const settings = suppliersRes.data || {};
-      setPaymentTerms(settings.payment_terms || [
-        { id: '1', name: 'Net 30', days: 30, description: 'Payment due in 30 days' },
-        { id: '2', name: 'Net 60', days: 60, description: 'Payment due in 60 days' },
-        { id: '3', name: 'Advance', days: 0, description: 'Payment in advance' },
-        { id: '4', name: 'LC', days: 0, description: 'Letter of Credit' },
-        { id: '5', name: 'COD', days: 0, description: 'Cash on Delivery' }
-      ]);
-      setDocumentTemplates(settings.document_templates || [
-        { id: '1', name: 'Commercial Invoice', required_for: 'export' },
-        { id: '2', name: 'Packing List', required_for: 'all' },
-        { id: '3', name: 'Certificate of Origin', required_for: 'export' },
-        { id: '4', name: 'Certificate of Analysis', required_for: 'all' },
-        { id: '5', name: 'Bill of Lading', required_for: 'export' },
-        { id: '6', name: 'Delivery Note', required_for: 'local' },
-        { id: '7', name: 'Tax Invoice', required_for: 'local' }
-      ]);
-      setContainerTypes(settings.container_types || [
-        { id: '1', value: '20ft', label: '20ft Container', max_mt: 28 },
-        { id: '2', value: '40ft', label: '40ft Container', max_mt: 28 },
-        { id: '3', value: 'iso_tank', label: 'ISO Tank', max_mt: 25 },
-        { id: '4', value: 'bulk_tanker_45', label: 'Bulk Tanker 45T', max_mt: 45 },
-        { id: '5', value: 'bulk_tanker_25', label: 'Bulk Tanker 25T', max_mt: 25 }
-      ]);
-      setCompanies(settings.companies || [
-        { id: '1', name: 'Main Factory', address: 'Industrial Area, UAE', type: 'billing' },
-        { id: '2', name: 'Warehouse A', address: 'Free Zone, UAE', type: 'shipping' }
-      ]);
+      const settings = settingsRes.data || {};
+      setPaymentTerms(settings.payment_terms || []);
+      setDocumentTemplates(settings.document_templates || []);
+      setContainerTypes(settings.container_types || []);
+      setCompanies(settings.companies || []);
+      setPackagingTypes(settings.packaging_types || []);
     } catch (error) {
       console.error('Failed to load settings:', error);
     } finally {
@@ -75,7 +54,8 @@ const SettingsPage = () => {
     { id: 'companies', label: 'Companies', icon: Building },
     { id: 'payment_terms', label: 'Payment Terms', icon: CreditCard },
     { id: 'documents', label: 'Document Templates', icon: FileText },
-    { id: 'containers', label: 'Container Types', icon: Container }
+    { id: 'containers', label: 'Container Types', icon: Container },
+    { id: 'packaging', label: 'Packaging Types', icon: Package }
   ];
 
   return (
@@ -87,7 +67,7 @@ const SettingsPage = () => {
           Settings & Configuration
         </h1>
         <p className="text-muted-foreground mt-1">
-          Manage vendors, payment terms, document templates, and container types
+          Manage vendors, payment terms, document templates, containers, and packaging
         </p>
       </div>
 
@@ -145,6 +125,13 @@ const SettingsPage = () => {
               types={containerTypes}
               onRefresh={loadData}
               onEdit={(c) => { setEditItem(c); setShowAddModal(true); }}
+            />
+          )}
+          {activeTab === 'packaging' && (
+            <PackagingTab 
+              types={packagingTypes}
+              onRefresh={loadData}
+              onEdit={(p) => { setEditItem(p); setShowAddModal(true); }}
             />
           )}
         </>
@@ -297,7 +284,6 @@ const CompaniesTab = ({ companies, onRefresh, onEdit }) => {
       setNewCompany({ name: '', address: '', type: 'billing' });
       onRefresh();
     } catch (error) {
-      // Fallback - save locally
       toast.success('Company configured locally');
       setAdding(false);
     }
@@ -504,6 +490,117 @@ const ContainersTab = ({ types, onRefresh, onEdit }) => {
   );
 };
 
+// ==================== PACKAGING TAB ====================
+const PackagingTab = ({ types, onRefresh, onEdit }) => {
+  const [adding, setAdding] = useState(false);
+  const [newPackaging, setNewPackaging] = useState({ name: '', net_weight_kg: 0, type: 'drum' });
+
+  const handleAdd = async () => {
+    if (!newPackaging.name) {
+      toast.error('Packaging name is required');
+      return;
+    }
+    try {
+      await api.post('/settings/packaging-types', newPackaging);
+      toast.success('Packaging type added');
+      setAdding(false);
+      setNewPackaging({ name: '', net_weight_kg: 0, type: 'drum' });
+      onRefresh();
+    } catch (error) {
+      toast.error('Failed to add packaging type');
+    }
+  };
+
+  return (
+    <div className="glass rounded-lg border border-border">
+      <div className="p-4 border-b border-border flex justify-between items-center">
+        <div>
+          <h2 className="text-lg font-semibold">Packaging Types</h2>
+          <p className="text-sm text-muted-foreground">Configure packaging types with net weights for quotations</p>
+        </div>
+        <Button onClick={() => setAdding(true)} data-testid="add-packaging-btn">
+          <Plus className="w-4 h-4 mr-2" />
+          Add Packaging Type
+        </Button>
+      </div>
+
+      {adding && (
+        <div className="p-4 border-b border-border bg-muted/20">
+          <div className="grid grid-cols-3 gap-4">
+            <Input
+              placeholder="Packaging Name *"
+              value={newPackaging.name}
+              onChange={(e) => setNewPackaging({...newPackaging, name: e.target.value})}
+            />
+            <Input
+              type="number"
+              placeholder="Net Weight (KG)"
+              value={newPackaging.net_weight_kg}
+              onChange={(e) => setNewPackaging({...newPackaging, net_weight_kg: parseFloat(e.target.value) || 0})}
+            />
+            <select 
+              className="rounded border p-2 bg-background"
+              value={newPackaging.type}
+              onChange={(e) => setNewPackaging({...newPackaging, type: e.target.value})}
+            >
+              <option value="drum">Drum</option>
+              <option value="ibc">IBC</option>
+              <option value="jerrycan">Jerrycan</option>
+              <option value="tank">Tank</option>
+              <option value="bulk">Bulk</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+          <div className="flex gap-2 mt-3">
+            <Button size="sm" onClick={handleAdd}>
+              <Check className="w-4 h-4 mr-1" /> Save
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => setAdding(false)}>
+              <X className="w-4 h-4 mr-1" /> Cancel
+            </Button>
+          </div>
+        </div>
+      )}
+
+      <div className="overflow-x-auto">
+        <table className="w-full">
+          <thead className="bg-muted/30">
+            <tr>
+              <th className="p-3 text-left text-xs font-medium text-muted-foreground">Name</th>
+              <th className="p-3 text-left text-xs font-medium text-muted-foreground">Net Weight (KG)</th>
+              <th className="p-3 text-left text-xs font-medium text-muted-foreground">Type</th>
+              <th className="p-3 text-left text-xs font-medium text-muted-foreground">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {types.map((pkg) => (
+              <tr key={pkg.id} className="border-b border-border/50 hover:bg-muted/10">
+                <td className="p-3 font-medium flex items-center gap-2">
+                  <Package className="w-4 h-4 text-orange-400" />
+                  {pkg.name}
+                </td>
+                <td className="p-3">
+                  <span className="font-mono text-emerald-400">{pkg.net_weight_kg} KG</span>
+                </td>
+                <td className="p-3">
+                  <Badge className="bg-orange-500/20 text-orange-400">
+                    {pkg.type?.toUpperCase()}
+                  </Badge>
+                </td>
+                <td className="p-3">
+                  <Button size="sm" variant="ghost" onClick={() => onEdit(pkg)}>
+                    <Edit className="w-4 h-4" />
+                  </Button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+};
+
 // ==================== ADD/EDIT MODAL ====================
 const AddEditModal = ({ type, item, onClose, onSave }) => {
   const [form, setForm] = useState(item || {});
@@ -512,9 +609,10 @@ const AddEditModal = ({ type, item, onClose, onSave }) => {
   const handleSave = async () => {
     setSaving(true);
     try {
-      // API call based on type
       if (type === 'vendors' && item) {
         await api.put(`/suppliers/${item.id}`, form);
+      } else if (type === 'packaging' && item) {
+        await api.put(`/settings/packaging-types/${item.id}`, form);
       }
       toast.success('Saved successfully');
       onSave();
@@ -565,6 +663,33 @@ const AddEditModal = ({ type, item, onClose, onSave }) => {
               <div>
                 <Label>Max Capacity (MT)</Label>
                 <Input type="number" value={form.max_mt || ''} onChange={(e) => setForm({...form, max_mt: parseFloat(e.target.value)})} />
+              </div>
+            </>
+          )}
+          {type === 'packaging' && (
+            <>
+              <div>
+                <Label>Name</Label>
+                <Input value={form.name || ''} onChange={(e) => setForm({...form, name: e.target.value})} />
+              </div>
+              <div>
+                <Label>Net Weight (KG)</Label>
+                <Input type="number" value={form.net_weight_kg || ''} onChange={(e) => setForm({...form, net_weight_kg: parseFloat(e.target.value)})} />
+              </div>
+              <div>
+                <Label>Type</Label>
+                <select 
+                  className="w-full rounded border p-2 bg-background"
+                  value={form.type || 'other'}
+                  onChange={(e) => setForm({...form, type: e.target.value})}
+                >
+                  <option value="drum">Drum</option>
+                  <option value="ibc">IBC</option>
+                  <option value="jerrycan">Jerrycan</option>
+                  <option value="tank">Tank</option>
+                  <option value="bulk">Bulk</option>
+                  <option value="other">Other</option>
+                </select>
               </div>
             </>
           )}
