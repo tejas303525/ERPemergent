@@ -1526,6 +1526,134 @@ async def update_dispatch_status(schedule_id: str, status: str, current_user: di
     
     return {"message": f"Dispatch status updated to {status}"}
 
+# ==================== TRANSPORT OPERATION STATUS ====================
+
+@api_router.put("/transport/inward/{transport_id}/operation-status")
+async def update_inward_operation_status(
+    transport_id: str, 
+    status: str,
+    eta: Optional[str] = None,
+    scheduled_time: Optional[str] = None,
+    new_transporter: Optional[str] = None,
+    new_delivery_date: Optional[str] = None,
+    notes: Optional[str] = None,
+    current_user: dict = Depends(get_current_user)
+):
+    """Update transport operation status (On the Way, Scheduled, Rescheduled)"""
+    valid_statuses = ["ON_THE_WAY", "SCHEDULED", "RESCHEDULED"]
+    if status not in valid_statuses:
+        raise HTTPException(status_code=400, detail=f"Invalid status. Must be one of: {valid_statuses}")
+    
+    update_data = {"operation_status": status}
+    
+    if status == "ON_THE_WAY" and eta:
+        update_data["eta"] = eta
+    elif status == "SCHEDULED" and scheduled_time:
+        update_data["scheduled_time"] = scheduled_time
+        update_data["scheduled_date"] = scheduled_time.split("T")[0] if "T" in scheduled_time else scheduled_time
+    elif status == "RESCHEDULED":
+        if new_transporter:
+            update_data["transporter_name"] = new_transporter
+        if new_delivery_date:
+            update_data["rescheduled_date"] = new_delivery_date.split("T")[0] if "T" in new_delivery_date else new_delivery_date
+            update_data["scheduled_time"] = new_delivery_date
+    
+    if notes:
+        update_data["operation_notes"] = notes
+    
+    result = await db.transport_inward.update_one({"id": transport_id}, {"$set": update_data})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Transport not found")
+    
+    return {"success": True, "message": f"Operation status updated to {status}"}
+
+@api_router.put("/transport/outward/{transport_id}/operation-status")
+async def update_outward_operation_status(
+    transport_id: str, 
+    status: str,
+    eta: Optional[str] = None,
+    scheduled_time: Optional[str] = None,
+    new_transporter: Optional[str] = None,
+    new_delivery_date: Optional[str] = None,
+    notes: Optional[str] = None,
+    current_user: dict = Depends(get_current_user)
+):
+    """Update outward transport operation status"""
+    valid_statuses = ["ON_THE_WAY", "SCHEDULED", "RESCHEDULED"]
+    if status not in valid_statuses:
+        raise HTTPException(status_code=400, detail=f"Invalid status. Must be one of: {valid_statuses}")
+    
+    update_data = {"operation_status": status}
+    
+    if status == "ON_THE_WAY" and eta:
+        update_data["eta"] = eta
+    elif status == "SCHEDULED" and scheduled_time:
+        update_data["scheduled_time"] = scheduled_time
+        update_data["scheduled_date"] = scheduled_time.split("T")[0] if "T" in scheduled_time else scheduled_time
+    elif status == "RESCHEDULED":
+        if new_transporter:
+            update_data["transporter_name"] = new_transporter
+        if new_delivery_date:
+            update_data["rescheduled_date"] = new_delivery_date.split("T")[0] if "T" in new_delivery_date else new_delivery_date
+            update_data["scheduled_time"] = new_delivery_date
+    
+    if notes:
+        update_data["operation_notes"] = notes
+    
+    result = await db.transport_outward.update_one({"id": transport_id}, {"$set": update_data})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Transport not found")
+    
+    return {"success": True, "message": f"Operation status updated to {status}"}
+
+@api_router.post("/transport/inward/book")
+async def book_inward_transport(data: dict, current_user: dict = Depends(get_current_user)):
+    """Book a new inward transport"""
+    transport_number = await generate_sequence("TIN", "transport_inward")
+    
+    transport = {
+        "id": str(uuid.uuid4()),
+        "transport_number": transport_number,
+        "transporter_name": data.get("transporter_name"),
+        "vehicle_type": data.get("vehicle_type"),
+        "vehicle_number": data.get("vehicle_number"),
+        "scheduled_date": data.get("scheduled_date", "").split("T")[0] if data.get("scheduled_date") else None,
+        "scheduled_time": data.get("scheduled_date"),
+        "notes": data.get("notes"),
+        "status": "PENDING",
+        "operation_status": "SCHEDULED",
+        "source": "MANUAL_BOOKING",
+        "created_by": current_user["id"],
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    
+    await db.transport_inward.insert_one(transport)
+    return await db.transport_inward.find_one({"id": transport["id"]}, {"_id": 0})
+
+@api_router.post("/transport/outward/book")
+async def book_outward_transport(data: dict, current_user: dict = Depends(get_current_user)):
+    """Book a new outward transport"""
+    transport_number = await generate_sequence("TOUT", "transport_outward")
+    
+    transport = {
+        "id": str(uuid.uuid4()),
+        "transport_number": transport_number,
+        "transporter_name": data.get("transporter_name"),
+        "vehicle_type": data.get("vehicle_type"),
+        "vehicle_number": data.get("vehicle_number"),
+        "scheduled_date": data.get("scheduled_date", "").split("T")[0] if data.get("scheduled_date") else None,
+        "scheduled_time": data.get("scheduled_date"),
+        "transport_type": "LOCAL" if data.get("vehicle_type") != "container" else "CONTAINER",
+        "notes": data.get("notes"),
+        "status": "PENDING",
+        "operation_status": "SCHEDULED",
+        "created_by": current_user["id"],
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    
+    await db.transport_outward.insert_one(transport)
+    return await db.transport_outward.find_one({"id": transport["id"]}, {"_id": 0})
+
 # ==================== DOCUMENTATION ROUTES ====================
 
 @api_router.post("/export-documents", response_model=ExportDocument)
