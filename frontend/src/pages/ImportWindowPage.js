@@ -323,9 +323,7 @@ const ImportDetails = ({ importRecord, onRefresh, onClose }) => {
               className={`p-3 rounded-lg border cursor-pointer transition-colors ${
                 doc.received 
                   ? 'border-green-500/30 bg-green-500/5' 
-                  : doc.required 
-                    ? 'border-amber-500/30 bg-amber-500/5'
-                    : 'border-border'
+                  : 'border-border'
               }`}
               onClick={() => handleCheckItem(doc.type)}
             >
@@ -336,17 +334,7 @@ const ImportDetails = ({ importRecord, onRefresh, onClose }) => {
                   <Square className="w-5 h-5 text-muted-foreground" />
                 )}
                 <div className="flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium text-sm">{doc.name}</span>
-                    {doc.required && !doc.received && (
-                      <span className="px-1.5 py-0.5 rounded text-xs bg-amber-500/20 text-amber-400">Required</span>
-                    )}
-                  </div>
-                  {doc.received && doc.received_at && (
-                    <span className="text-xs text-muted-foreground">
-                      Received: {new Date(doc.received_at).toLocaleDateString()}
-                    </span>
-                  )}
+                  <span className="font-medium text-sm">{doc.label}</span>
                 </div>
                 <FileText className="w-4 h-4 text-muted-foreground" />
               </div>
