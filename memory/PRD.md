@@ -19,140 +19,118 @@ Build a full Manufacturing ERP system based on a detailed mermaid chart with com
 5. **BOM Management** - Product and Packaging BOMs
 6. **Material Availability Check** - Auto-check on quotation approval
 
-### Phase 2 (COMPLETED ✅) - December 30, 2025
+### Phase 2 (COMPLETED ✅ - December 30, 2025)
 
 #### Bug Fixes Implemented
-1. **Quotation Page Enhancements (Bug 1)** ✅
-   - Export Orders: Container types (20ft, 40ft, ISO Tank, Bulk Tankers), Country of destination/origin
-   - Local Orders: Port of loading/discharge, 5% VAT calculation
-   - Payment terms and document checklist (configurable)
-   - All fields reflected in PDF generation
+1. **Quotation Page Enhancements** ✅
+   - Container types, container count, capacity validation
+   - "Max cargo exceeded" error with solution
+   - Documents renamed to "Documents that need to be submitted"
 
-2. **Quotation Approval UI Bug (Bug 2)** ✅
-   - Fixed immediate state update after approval
-   - No longer shows "failed" message on first click
+2. **Quotation Approval UI Bug** ✅ - Fixed state update
 
-3. **Job Order Automation (Bug 3)** ✅
-   - Auto-fill product, quantity, packaging from SPA selection
-   - Auto-load BOM from BOM Management module
-   - Real-time material availability check against BOM components
-   - `procurement_required` flag accurately calculated
+3. **Job Order Automation** ✅
+   - Auto-fill from SPA
+   - Label confirmation & Schedule timing fields
+   - Shift selection (Morning/Evening/Night)
+   - Sales role access added
 
-4. **Shipping/Transport Integration (Bug 4)** ✅
-   - Added CRO fields: freight_charges, pull_out_date, si_cutoff, gate_in_date
-   - CRO entry auto-creates transport_outward record
-   - Container bookings appear in Transport Window "Outward - Container" tab
+4. **Shipping/Transport Integration** ✅
+   - CRO fields (freight_charges, pull_out_date, si_cutoff, gate_in_date)
+   - Auto-creates transport_outward
 
-5. **Procurement Flow Rework (Bug 5)** ✅
-   - Changed from RFQ model to "Generate PO" model
-   - Select shortages → Enter unit price → Generate PO directly
-   - PO immediately appears on Finance Approval page with DRAFT status
-   - Fixed multi-select checkbox bug
-   - Vendors with address autofill
+5. **Procurement Flow Rework** ✅ - Generate PO model
 
 #### New Modules Implemented
 1. **Security Gate Module** (`/security`) ✅
-   - 3 Windows: Inward Transport, Outward Transport, RFQ Window
-   - Security checklist with weighment entry
-   - Vehicle/driver verification
-   - Seal number tracking
-   - Auto-routes to QC after completion
-
 2. **QC Inspection Module** (`/qc-inspection`) ✅
-   - 3 Tabs: Pending Inspection, Completed, COA Management
-   - Standard quality tests (appearance, color, moisture, pH, density, purity, viscosity)
-   - Batch number tracking
-   - Pass/Fail workflow
-   - COA (Certificate of Analysis) generation for outward shipments
+3. **Settings Module** (`/settings`) ✅
+4. **Transportation Operation Module** (`/transport-operation`) ✅
+5. **Transportation Planner Module** (`/transport-planner`) ✅
 
-#### Workflow Implementation
-**Inward Flow:**
-Security Checklist + Weight → QC Inspection → GRN → Stock Update → Notify Payables
+### Phase 2.1 (COMPLETED ✅ - December 30, 2025)
 
-**Outward Flow:**
-Security Checklist + Weight → QC Inspection → Delivery Order → Notify Receivables
-- Local Customer: Tax Invoice
-- International Customer: Commercial Invoice
+1. **Transport Window Restructured**
+   - Inward (EXW) - Supplier-arranged
+   - Inward (Import/Logistics) - International imports
+   - Local Dispatch - Tanker/trailer
+   - Export Container - Container shipments
 
-**Export Documents (Auto-generated for international):**
-- Packing List
-- Certificate of Origin (COO)
-- BL Draft
-- Certificate of Analysis (COA)
+2. **Transportation Operation Module**
+   - 7-day hierarchical view
+   - Status: On the Way (ETA), Scheduled (Time), Rescheduled (New transporter & date)
+   - Columns: JO/PO, Qty, Product, Vehicle, Transporter, Status, ETA
+
+3. **Transportation Planner Module**
+   - Inward (EXW) planning
+   - Inward (Import) planning
+   - Dispatch planning
+   - Transport booking
+
+4. **Local Quotation Incoterm**
+   - Added incoterm dropdown for local orders
+
+5. **Finance Approval Auto-Routing**
+   - EXW → Transport Window (Inward)
+   - DDP → Security Gate directly
+   - FOB/CFR/CIF → Import Window
+
+## Workflow by Incoterm
+
+### EXW (Ex Works) - Inward
+```
+Finance Approves PO → Transport Window (Inward EXW) → Security Gate → QC → GRN → Stock → Payables
+```
+
+### DDP (Delivered Duty Paid) - Inward
+```
+Finance Approves PO → Security Gate → QC → GRN → Stock → Payables
+```
+
+### FOB/CFR/CIF - Import
+```
+Finance Approves PO → Import Window → Customs → Transport → Security → QC → GRN → Stock
+```
+
+### Local Dispatch
+```
+Job Approved → Production → Ready → Transport Planner → Security → QC → DO → Tax Invoice → Receivables
+```
+
+### Export Container
+```
+Job Approved → Production → Shipping → Transport → Security → QC → DO + Packing List + COO + BL + COA → Invoice → Receivables
+```
 
 ## Technical Architecture
 
-### Backend
-- **Framework:** FastAPI (Python)
-- **Database:** MongoDB (Motor async driver)
-- **Authentication:** JWT
-- **File:** `/app/backend/server.py` (monolithic, 5000+ lines)
-
-### Frontend
-- **Framework:** React
-- **Styling:** TailwindCSS
-- **UI Components:** Shadcn/UI
-- **State:** React Context API
-- **HTTP Client:** Axios
-
-### Key API Endpoints
-```
-# Phase 2 New Endpoints
-POST /api/purchase-orders/generate - Generate PO directly from shortages
-GET /api/security/dashboard - Security dashboard with stats
-GET /api/security/inward - Inward transports for security check
-GET /api/security/outward - Outward transports for security check
-POST /api/security/checklists - Create security checklist
-PUT /api/security/checklists/{id}/complete - Complete checklist and route to QC
-GET /api/qc/dashboard - QC dashboard with pending inspections
-GET /api/qc/inspections - Get QC inspections
-PUT /api/qc/inspections/{id}/pass - Pass QC inspection (creates GRN or DO)
-PUT /api/qc/inspections/{id}/fail - Fail QC inspection
-POST /api/qc/inspections/{id}/generate-coa - Generate COA for outward shipment
-GET /api/documents/export/{job_id} - Get export documents status
-```
-
-### Database Collections
-- `quotations` - Sales quotations with order_type (local/export)
-- `job_orders` - Production jobs with procurement_required flag
-- `shipping_bookings` - Shipping with CRO fields
-- `transport_inward`, `transport_outward` - Transport window records
-- `security_checklists` - Security gate checklists
-- `qc_inspections` - QC inspection records with COA tracking
-- `delivery_orders` - Delivery orders auto-generated from QC pass
-- `grn` - Goods Receipt Notes created from inward QC pass
-- `purchase_orders` - POs with DRAFT status for finance approval
+### Backend: FastAPI (Python) + MongoDB
+### Frontend: React + TailwindCSS + Shadcn/UI
+### Auth: JWT
 
 ## Test Credentials
-- **Admin:** admin@erp.com / admin123
-- **Finance:** finance@erp.com / finance123
+- Admin: admin@erp.com / admin123
+- Finance: finance@erp.com / finance123
 
 ## Current State
-- **Backend Status:** Running ✅
-- **Frontend Status:** Running ✅
-- **All Phase 2 Features:** Tested and Working ✅
+- Backend: Running ✅
+- Frontend: Running ✅
+- All Modules: Tested and Working ✅
 
-## Test Results (December 30, 2025)
-- Backend: 13/13 tests passed (100%)
-- Frontend: All pages load correctly
-- Security Gate: 2 inward transports pending
-- QC Inspection: 0 pending inspections
-- Procurement: 2 raw material shortages displayed
-- Quotations: 16 total (10 LOCAL, 6 EXPORT)
-- Job Orders: 10 jobs with BOM automation
+## Documentation
+- Full documentation available at `/app/DOCUMENTATION.md`
 
 ## Future Tasks (Backlog)
 
-### P1 - High Priority
-1. PDF Generation with new custom fields
-2. Admin Configuration Pages for vendors, payment terms, documents
+### P1
+1. PDF generation with all custom fields
+2. Email integration for sending POs
 
-### P2 - Medium Priority
-1. Documentation update (USER_MANUAL.md)
-2. Code refactoring (split server.py into modules)
-3. Email integration for sending POs to vendors
+### P2
+1. Production schedule auto-deduct materials
+2. Production → GRN notification flow
+3. Mobile responsive enhancements
 
-### P3 - Low Priority
-1. Dashboard analytics improvements
-2. Mobile responsive enhancements
-3. Bulk operations support
+### P3
+1. Dashboard analytics
+2. Bulk operations
