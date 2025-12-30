@@ -48,32 +48,31 @@ Build a full Manufacturing ERP system based on a detailed mermaid chart with com
 4. **Transportation Operation Module** (`/transport-operation`) ✅
 5. **Transportation Planner Module** (`/transport-planner`) ✅
 
-### Phase 2.1 (COMPLETED ✅ - December 30, 2025)
+### Phase 2.1 - Bug Fixes (COMPLETED ✅ - December 30, 2025)
 
-1. **Transport Window Restructured**
-   - Inward (EXW) - Supplier-arranged
-   - Inward (Import/Logistics) - International imports
-   - Local Dispatch - Tanker/trailer
-   - Export Container - Container shipments
+#### Critical Bug Fixes (P0)
+1. **Settings Page 404 Error** ✅ FIXED
+   - `/api/settings/all` endpoint verified working
+   - Returns payment_terms, document_templates, container_types, companies, packaging_types
 
-2. **Transportation Operation Module**
-   - 7-day hierarchical view
-   - Status: On the Way (ETA), Scheduled (Time), Rescheduled (New transporter & date)
-   - Columns: JO/PO, Qty, Product, Vehicle, Transporter, Status, ETA
+2. **Quotation Approval 520 Error** ✅ FIXED
+   - ObjectId serialization issue resolved
+   - Used `{**dict}` spread before `insert_one` to prevent _id mutation
 
-3. **Transportation Planner Module**
-   - Inward (EXW) planning
-   - Inward (Import) planning
-   - Dispatch planning
-   - Transport booking
+3. **Security Checklist 520 Error** ✅ FIXED
+   - ObjectId serialization issue resolved
+   - Returns clean checklist without MongoDB _id
 
-4. **Local Quotation Incoterm**
-   - Added incoterm dropdown for local orders
+4. **EXW Incoterm Routing** ✅ FIXED
+   - EXW POs now correctly route to Transport Window (TRANSPORTATION_INWARD)
+   - Transport Window shows EXW records with proper badges
 
-5. **Finance Approval Auto-Routing**
-   - EXW → Transport Window (Inward)
-   - DDP → Security Gate directly
-   - FOB/CFR/CIF → Import Window
+5. **Production Schedule Missing Jobs** ✅ FIXED
+   - Added `in_production` and `approved` to schedule query
+   - Unified schedule now shows all relevant job statuses
+
+6. **Job Order Status Update** ✅ FIXED
+   - PUT /api/job-orders/{id}/status?status=approved works correctly
 
 ## Workflow by Incoterm
 
@@ -111,26 +110,47 @@ Job Approved → Production → Shipping → Transport → Security → QC → D
 ## Test Credentials
 - Admin: admin@erp.com / admin123
 - Finance: finance@erp.com / finance123
+- Security: security@erp.com / security123
 
-## Current State
+## Current State (December 30, 2025)
 - Backend: Running ✅
 - Frontend: Running ✅
-- All Modules: Tested and Working ✅
+- All P0 Bug Fixes: Verified ✅ (19/19 tests passed)
+
+## Test Reports
+- `/app/test_reports/iteration_6.json` - Latest test results (100% pass rate)
+- `/app/tests/test_phase2_bugfixes.py` - Test file
+
+## Remaining Tasks (Backlog)
+
+### P1 - High Priority
+1. **Duplicate Job Orders** - System creating duplicate job orders for same item
+   - Need to investigate job order creation logic
+2. **QC Report for Payables** - Enhance QC module for detailed reports
+3. **Transportation PO Generation** - Generate PO after transport booking with email
+4. **Stock Management Page** - Full implementation needed
+
+### P2 - Medium Priority
+1. **Job Order SPA Selection** - Show all SPAs for a product, not one-by-one
+2. **Import Window "Move to Transport"** - Action to move to Inward (Import/Logistics) tab
+3. **Quotation Enhancements** - Container count validation
+4. **Job Order Enhancements** - Label confirmation, schedule timing, sales access
+
+### P3 - Low Priority
+1. **Full System Documentation** - Complete DOCUMENTATION.md
+2. **Production Schedule Automation** - Auto-deduct materials, trigger GRN
+3. **PDF generation** with custom fields
+4. **Email integration** for sending POs
+5. **Mobile responsive** enhancements
+6. **Dashboard analytics**
+7. **Bulk operations**
+
+### Technical Debt
+1. **server.py Refactoring** - 6500+ lines, needs to be split into routers
+   - `/app/backend/routers/quotations.py`
+   - `/app/backend/routers/procurement.py`
+   - `/app/backend/routers/qc.py`
+   - etc.
 
 ## Documentation
 - Full documentation available at `/app/DOCUMENTATION.md`
-
-## Future Tasks (Backlog)
-
-### P1
-1. PDF generation with all custom fields
-2. Email integration for sending POs
-
-### P2
-1. Production schedule auto-deduct materials
-2. Production → GRN notification flow
-3. Mobile responsive enhancements
-
-### P3
-1. Dashboard analytics
-2. Bulk operations
