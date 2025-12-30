@@ -152,6 +152,7 @@ const PayablesPage = () => {
         {[
           { id: 'ledger', label: 'Supplier Ledger', icon: Book },
           { id: 'grn', label: 'GRN Approvals', icon: FileText, count: pendingGRNs.length },
+          { id: 'qc_reports', label: 'QC Reports', icon: ClipboardCheck, count: qcReports.length },
           { id: 'po_rfq', label: 'PO/RFQ Bills', icon: DollarSign, count: billsByType.PO_RFQ.filter(b => b.status !== 'PAID').length },
           { id: 'transport', label: 'Transport Bills', icon: TrendingDown, count: billsByType.TRANSPORT.filter(b => b.status !== 'PAID').length },
           { id: 'shipping', label: 'Shipping Bills', icon: Building, count: billsByType.SHIPPING.filter(b => b.status !== 'PAID').length },
