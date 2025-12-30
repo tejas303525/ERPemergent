@@ -356,44 +356,25 @@ const ImportDetails = ({ importRecord, onRefresh, onClose }) => {
       </div>
 
       {/* Actions */}
-      <div className="p-4 border-t border-border">
-        {importRecord.status === 'PENDING_DOCS' && allDocsReceived && (
+      <div className="p-4 border-t border-border space-y-2">
+        {importRecord.status === 'PENDING' && allDocsReceived && (
           <Button 
             className="w-full bg-blue-500 hover:bg-blue-600"
-            onClick={() => handleStatusUpdate('IN_TRANSIT')}
+            onClick={handleMoveToTransport}
+            disabled={moving}
           >
             <Ship className="w-4 h-4 mr-2" />
-            Mark as In Transit
+            {moving ? 'Moving...' : 'Move to Transport Window (Inward Import)'}
           </Button>
         )}
-        {importRecord.status === 'IN_TRANSIT' && (
-          <Button 
-            className="w-full bg-purple-500 hover:bg-purple-600"
-            onClick={() => handleStatusUpdate('AT_PORT')}
-          >
-            <Package className="w-4 h-4 mr-2" />
-            Arrived at Port
-          </Button>
+        {importRecord.status === 'IN_TRANSPORT' && (
+          <div className="p-3 rounded bg-green-500/10 border border-green-500/30 text-center">
+            <Check className="w-5 h-5 text-green-400 mx-auto mb-1" />
+            <p className="text-green-400 font-medium">Moved to Transport Window</p>
+            <p className="text-sm text-muted-foreground">{importRecord.transport_number}</p>
+          </div>
         )}
-        {importRecord.status === 'AT_PORT' && (
-          <Button 
-            className="w-full bg-cyan-500 hover:bg-cyan-600"
-            onClick={() => handleStatusUpdate('CLEARED')}
-          >
-            <Check className="w-4 h-4 mr-2" />
-            Customs Cleared
-          </Button>
-        )}
-        {importRecord.status === 'CLEARED' && (
-          <Button 
-            className="w-full bg-green-500 hover:bg-green-600"
-            onClick={() => handleStatusUpdate('COMPLETED')}
-          >
-            <Check className="w-4 h-4 mr-2" />
-            Complete Import
-          </Button>
-        )}
-        {!allDocsReceived && importRecord.status === 'PENDING_DOCS' && (
+        {!allDocsReceived && importRecord.status === 'PENDING' && (
           <p className="text-center text-sm text-amber-400">
             <AlertTriangle className="w-4 h-4 inline mr-1" />
             Complete document checklist to proceed
@@ -403,17 +384,5 @@ const ImportDetails = ({ importRecord, onRefresh, onClose }) => {
     </div>
   );
 };
-
-// Default document checklist for imports
-const getDefaultChecklist = () => [
-  { type: 'COMMERCIAL_INVOICE', name: 'Commercial Invoice', required: true, received: false },
-  { type: 'PACKING_LIST', name: 'Packing List', required: true, received: false },
-  { type: 'BILL_OF_LADING', name: 'Bill of Lading (B/L)', required: true, received: false },
-  { type: 'CERTIFICATE_OF_ORIGIN', name: 'Certificate of Origin (COO)', required: true, received: false },
-  { type: 'CERTIFICATE_OF_ANALYSIS', name: 'Certificate of Analysis (COA)', required: true, received: false },
-  { type: 'INSURANCE_CERT', name: 'Insurance Certificate', required: false, received: false },
-  { type: 'PHYTO_CERT', name: 'Phytosanitary Certificate', required: false, received: false },
-  { type: 'MSDS', name: 'Material Safety Data Sheet', required: false, received: false },
-];
 
 export default ImportWindowPage;
