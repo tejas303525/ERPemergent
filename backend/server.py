@@ -4286,7 +4286,7 @@ async def generate_po_directly(data: GeneratePORequest, current_user: dict = Dep
 
 @api_router.put("/purchase-orders/{po_id}/finance-approve")
 async def finance_approve_po(po_id: str, current_user: dict = Depends(get_current_user)):
-    """Finance approves a PO (Phase 6)"""
+    """Finance approves a PO (Phase 6) and routes based on incoterm"""
     if current_user["role"] not in ["admin", "finance"]:
         raise HTTPException(status_code=403, detail="Only admin/finance can approve POs")
     
@@ -4306,7 +4306,92 @@ async def finance_approve_po(po_id: str, current_user: dict = Depends(get_curren
         }}
     )
     
-    return {"success": True, "message": "PO approved by finance"}
+    # Auto-route based on incoterm after finance approval
+    incoterm = po.get("incoterm", "EXW").upper()
+    route_result = {"routed_to": None}
+    
+    if incoterm == "EXW":
+        # Route to Transportation Window (Inward) - supplier delivers to our location
+        transport_number = await generate_sequence("TIN", "transport_inward")
+        transport = {
+            "id": str(uuid.uuid4()),
+            "transport_number": transport_number,
+            "po_id": po_id,
+            "po_number": po.get("po_number"),
+            "supplier_name": po.get("supplier_name"),
+            "incoterm": incoterm,
+            "source": "PO_EXW",
+            "status": "PENDING",
+            "created_at": datetime.now(timezone.utc).isoformat()
+        }
+        await db.transport_inward.insert_one(transport)
+        route_result["routed_to"] = "TRANSPORTATION_INWARD"
+        route_result["transport_number"] = transport_number
+        
+        # Create notification
+        await create_notification(
+            event_type="PO_ROUTED_TRANSPORT",
+            title=f"PO {po.get('po_number')} Routed to Transport",
+            message=f"PO approved and routed to Transport Window (EXW incoterm)",
+            link="/transport-window",
+            ref_type="PO",
+            ref_id=po_id,
+            target_roles=["admin", "transport"],
+            notification_type="info"
+        )
+        
+    elif incoterm == "DDP":
+        # Route to Security & QC - vendor delivers directly
+        checklist_number = await generate_sequence("SEC", "security_checklists")
+        checklist = {
+            "id": str(uuid.uuid4()),
+            "checklist_number": checklist_number,
+            "ref_type": "PO",
+            "ref_id": po_id,
+            "ref_number": po.get("po_number"),
+            "supplier_name": po.get("supplier_name"),
+            "checklist_type": "INWARD",
+            "status": "PENDING",
+            "created_at": datetime.now(timezone.utc).isoformat()
+        }
+        await db.security_checklists.insert_one(checklist)
+        route_result["routed_to"] = "SECURITY_QC"
+        route_result["checklist_number"] = checklist_number
+        
+    elif incoterm in ["FOB", "CFR", "CIF", "CIP"]:
+        # Route to Import Window
+        import_number = await generate_sequence("IMP", "imports")
+        import_record = {
+            "id": str(uuid.uuid4()),
+            "import_number": import_number,
+            "po_id": po_id,
+            "po_number": po.get("po_number"),
+            "supplier_name": po.get("supplier_name"),
+            "incoterm": incoterm,
+            "status": "PENDING",
+            "document_checklist": {
+                "bl": False,
+                "invoice": False,
+                "packing_list": False,
+                "coo": False,
+                "inspection_cert": False
+            },
+            "created_at": datetime.now(timezone.utc).isoformat()
+        }
+        await db.imports.insert_one(import_record)
+        route_result["routed_to"] = "IMPORT"
+        route_result["import_number"] = import_number
+    
+    # Update PO with routing info
+    await db.purchase_orders.update_one(
+        {"id": po_id},
+        {"$set": {
+            "routed_to": route_result.get("routed_to"),
+            "routed_at": datetime.now(timezone.utc).isoformat()
+        }}
+    )
+    
+    return {"success": True, "message": "PO approved by finance", "routing": route_result}
 
 @api_router.put("/purchase-orders/{po_id}/finance-reject")
 async def finance_reject_po(po_id: str, reason: str = "", current_user: dict = Depends(get_current_user)):
