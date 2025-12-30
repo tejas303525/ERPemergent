@@ -96,6 +96,7 @@ const AppRoutes = () => {
                 <Route path="/security" element={<SecurityQCPage />} />
                 <Route path="/qc-inspection" element={<QCInspectionPage />} />
                 <Route path="/settings" element={<SettingsPage />} />
+                <Route path="/stock-management" element={<StockManagementPage />} />
                 <Route path="/transport-operation" element={<TransportOperationPage />} />
                 <Route path="/transport-planner" element={<TransportPlannerPage />} />
                 <Route path="/users" element={<UsersPage />} />
