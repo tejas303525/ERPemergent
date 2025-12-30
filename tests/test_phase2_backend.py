@@ -16,7 +16,7 @@ def get_backend_url():
                     return line.split('=')[1].strip()
     except:
         pass
-    return 'https://factory-erp-next.preview.emergentagent.com'
+    return 'https://manufac-erp-2.preview.emergentagent.com'
 
 BASE_URL = get_backend_url()
 

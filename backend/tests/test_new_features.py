@@ -14,7 +14,7 @@ def get_backend_url():
                     return line.split('=', 1)[1].strip()
     except:
         pass
-    return os.environ.get('REACT_APP_BACKEND_URL', 'https://factory-erp-next.preview.emergentagent.com')
+    return os.environ.get('REACT_APP_BACKEND_URL', 'https://manufac-erp-2.preview.emergentagent.com')
 
 BASE_URL = get_backend_url().rstrip('/')
 
