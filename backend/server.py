@@ -803,6 +803,8 @@ async def check_material_availability_for_quotation(quotation: dict) -> dict:
                             })
     
     # Store shortages in material_shortage collection for RFQ
+    # Create a clean copy for the response (without _id from MongoDB)
+    response_shortages = []
     if shortages:
         for shortage in shortages:
             existing = await db.material_shortages.find_one({
@@ -811,15 +813,23 @@ async def check_material_availability_for_quotation(quotation: dict) -> dict:
                 "status": "PENDING"
             })
             if not existing:
-                shortage["id"] = str(uuid.uuid4())
-                shortage["status"] = "PENDING"
-                shortage["created_at"] = datetime.now(timezone.utc).isoformat()
-                await db.material_shortages.insert_one(shortage)
+                shortage_record = {
+                    **shortage,
+                    "id": str(uuid.uuid4()),
+                    "status": "PENDING",
+                    "created_at": datetime.now(timezone.utc).isoformat()
+                }
+                await db.material_shortages.insert_one(shortage_record)
+                # Add clean copy without _id for response
+                response_shortages.append({k: v for k, v in shortage_record.items() if k != "_id"})
+            else:
+                # Add existing shortage without _id
+                response_shortages.append({k: v for k, v in shortage.items() if k != "_id"})
     
     return {
-        "has_shortages": len(shortages) > 0,
-        "shortages": shortages,
-        "total_shortage_items": len(shortages)
+        "has_shortages": len(response_shortages) > 0,
+        "shortages": response_shortages,
+        "total_shortage_items": len(response_shortages)
     }
 
 @api_router.put("/quotations/{quotation_id}/reject")
@@ -5720,8 +5730,9 @@ async def create_security_checklist(data: SecurityChecklistCreate, current_user:
     
     checklist_number = await generate_sequence("SEC", "security_checklists")
     
+    checklist_id = str(uuid.uuid4())
     checklist = {
-        "id": str(uuid.uuid4()),
+        "id": checklist_id,
         "checklist_number": checklist_number,
         **data.model_dump(),
         "checklist_items": {
@@ -5736,9 +5747,10 @@ async def create_security_checklist(data: SecurityChecklistCreate, current_user:
         "created_at": datetime.now(timezone.utc).isoformat()
     }
     
-    await db.security_checklists.insert_one(checklist)
-    # Return without _id to avoid ObjectId serialization error
-    return await db.security_checklists.find_one({"id": checklist["id"]}, {"_id": 0})
+    # Create a copy for insertion to avoid _id being added to our response
+    await db.security_checklists.insert_one({**checklist})
+    # Return the clean checklist without _id
+    return checklist
 
 @api_router.put("/security/checklists/{checklist_id}")
 async def update_security_checklist(checklist_id: str, data: SecurityChecklistUpdate, current_user: dict = Depends(get_current_user)):
