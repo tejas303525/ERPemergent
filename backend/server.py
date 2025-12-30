@@ -3130,6 +3130,37 @@ async def get_suppliers(current_user: dict = Depends(get_current_user)):
     suppliers = await db.suppliers.find({"is_active": True}, {"_id": 0}).to_list(1000)
     return suppliers
 
+@api_router.get("/suppliers/{supplier_id}")
+async def get_supplier(supplier_id: str, current_user: dict = Depends(get_current_user)):
+    """Get a single supplier by ID"""
+    supplier = await db.suppliers.find_one({"id": supplier_id}, {"_id": 0})
+    if not supplier:
+        raise HTTPException(status_code=404, detail="Supplier not found")
+    return supplier
+
+@api_router.put("/suppliers/{supplier_id}")
+async def update_supplier(supplier_id: str, data: dict, current_user: dict = Depends(get_current_user)):
+    """Update a supplier"""
+    if current_user["role"] not in ["admin", "procurement"]:
+        raise HTTPException(status_code=403, detail="Only admin/procurement can update suppliers")
+    
+    update_data = {k: v for k, v in data.items() if v is not None and k != "id"}
+    result = await db.suppliers.update_one({"id": supplier_id}, {"$set": update_data})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Supplier not found")
+    return await db.suppliers.find_one({"id": supplier_id}, {"_id": 0})
+
+@api_router.delete("/suppliers/{supplier_id}")
+async def delete_supplier(supplier_id: str, current_user: dict = Depends(get_current_user)):
+    """Soft delete a supplier"""
+    if current_user["role"] not in ["admin", "procurement"]:
+        raise HTTPException(status_code=403, detail="Only admin/procurement can delete suppliers")
+    
+    result = await db.suppliers.update_one({"id": supplier_id}, {"$set": {"is_active": False}})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Supplier not found")
+    return {"message": "Supplier deleted"}
+
 # Purchase Orders Management
 @api_router.post("/purchase-orders", response_model=PurchaseOrder)
 async def create_purchase_order(data: PurchaseOrderCreate, current_user: dict = Depends(get_current_user)):
