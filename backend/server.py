@@ -955,12 +955,15 @@ async def get_job_order(job_id: str, current_user: dict = Depends(get_current_us
 
 @api_router.put("/job-orders/{job_id}/status")
 async def update_job_status(job_id: str, status: str, current_user: dict = Depends(get_current_user)):
-    valid_statuses = ["pending", "in_production", "procurement", "ready_for_dispatch", "dispatched"]
+    valid_statuses = ["pending", "approved", "in_production", "procurement", "ready_for_dispatch", "dispatched"]
     if status not in valid_statuses:
         raise HTTPException(status_code=400, detail=f"Invalid status. Must be one of: {valid_statuses}")
     
     update_data = {"status": status}
-    if status == "in_production":
+    if status == "approved":
+        update_data["approved_by"] = current_user["id"]
+        update_data["approved_at"] = datetime.now(timezone.utc).isoformat()
+    elif status == "in_production":
         update_data["production_start"] = datetime.now(timezone.utc).isoformat()
     elif status == "ready_for_dispatch":
         update_data["production_end"] = datetime.now(timezone.utc).isoformat()
@@ -969,12 +972,34 @@ async def update_job_status(job_id: str, status: str, current_user: dict = Depen
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Job order not found")
     
-    # Send email notification and create in-app notification
+    # Get job for routing logic
     job = await db.job_orders.find_one({"id": job_id}, {"_id": 0})
+    
+    # If approved, check incoterm from sales order and route appropriately
+    if status == "approved" and job:
+        so = await db.sales_orders.find_one({"id": job.get("sales_order_id")}, {"_id": 0})
+        if so:
+            quotation = await db.quotations.find_one({"id": so.get("quotation_id")}, {"_id": 0})
+            if quotation:
+                incoterm = quotation.get("incoterm", "").upper()
+                order_type = quotation.get("order_type", "local")
+                
+                # Route based on incoterm
+                if order_type == "export" and incoterm in ["FOB", "CFR", "CIF"]:
+                    # Will need shipping booking
+                    update_data["next_step"] = "SHIPPING"
+                elif order_type == "local" or incoterm in ["EXW", "DDP"]:
+                    # Will need transport booking
+                    update_data["next_step"] = "TRANSPORT"
+                
+                await db.job_orders.update_one({"id": job_id}, {"$set": update_data})
+    
+    # Send email notification and create in-app notification
     if job:
         asyncio.create_task(notify_job_order_status_change(job, status))
         # Create in-app notification
         notification_types = {
+            "approved": ("success", "Job Order Approved"),
             "in_production": ("info", "Production Started"),
             "ready_for_dispatch": ("success", "Ready for Dispatch"),
             "dispatched": ("success", "Job Dispatched"),
