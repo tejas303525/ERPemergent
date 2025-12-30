@@ -6176,6 +6176,401 @@ async def get_export_documents_status(job_id: str, current_user: dict = Depends(
     }
 
 
+# ==================== SETTINGS ENDPOINTS ====================
+
+@api_router.get("/settings/all")
+async def get_all_settings(current_user: dict = Depends(get_current_user)):
+    """Get all configurable settings"""
+    
+    # Get settings from database or return defaults
+    settings = await db.settings.find_one({"type": "app_settings"}, {"_id": 0})
+    
+    if not settings:
+        settings = {
+            "payment_terms": [
+                {"id": "1", "name": "Net 30", "days": 30, "description": "Payment due in 30 days"},
+                {"id": "2", "name": "Net 60", "days": 60, "description": "Payment due in 60 days"},
+                {"id": "3", "name": "Advance", "days": 0, "description": "Payment in advance"},
+                {"id": "4", "name": "LC", "days": 0, "description": "Letter of Credit"},
+                {"id": "5", "name": "COD", "days": 0, "description": "Cash on Delivery"}
+            ],
+            "document_templates": [
+                {"id": "1", "name": "Commercial Invoice", "required_for": "export"},
+                {"id": "2", "name": "Packing List", "required_for": "all"},
+                {"id": "3", "name": "Certificate of Origin", "required_for": "export"},
+                {"id": "4", "name": "Certificate of Analysis", "required_for": "all"},
+                {"id": "5", "name": "Bill of Lading", "required_for": "export"},
+                {"id": "6", "name": "Delivery Note", "required_for": "local"},
+                {"id": "7", "name": "Tax Invoice", "required_for": "local"}
+            ],
+            "container_types": [
+                {"id": "1", "value": "20ft", "label": "20ft Container", "max_mt": 28},
+                {"id": "2", "value": "40ft", "label": "40ft Container", "max_mt": 28},
+                {"id": "3", "value": "iso_tank", "label": "ISO Tank", "max_mt": 25},
+                {"id": "4", "value": "bulk_tanker_45", "label": "Bulk Tanker 45T", "max_mt": 45},
+                {"id": "5", "value": "bulk_tanker_25", "label": "Bulk Tanker 25T", "max_mt": 25}
+            ],
+            "companies": [
+                {"id": "1", "name": "Main Factory", "address": "Industrial Area, UAE", "type": "billing"},
+                {"id": "2", "name": "Warehouse A", "address": "Free Zone, UAE", "type": "shipping"}
+            ],
+            "packaging_types": [
+                {"id": "1", "name": "200L Drum", "net_weight_kg": 200, "type": "drum"},
+                {"id": "2", "name": "1000L IBC", "net_weight_kg": 1000, "type": "ibc"},
+                {"id": "3", "name": "25L Jerrycan", "net_weight_kg": 25, "type": "jerrycan"},
+                {"id": "4", "name": "Bulk", "net_weight_kg": 0, "type": "bulk"},
+                {"id": "5", "name": "ISO Tank", "net_weight_kg": 25000, "type": "tank"}
+            ]
+        }
+    
+    return settings
+
+@api_router.post("/settings/companies")
+async def add_company(data: dict, current_user: dict = Depends(get_current_user)):
+    """Add a new company"""
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Only admin can add companies")
+    
+    company = {
+        "id": str(uuid.uuid4()),
+        "name": data.get("name"),
+        "address": data.get("address"),
+        "type": data.get("type", "billing")
+    }
+    
+    await db.companies.insert_one(company)
+    return await db.companies.find_one({"id": company["id"]}, {"_id": 0})
+
+@api_router.get("/settings/packaging-types")
+async def get_packaging_types(current_user: dict = Depends(get_current_user)):
+    """Get configurable packaging types"""
+    packaging = await db.packaging_types.find({}, {"_id": 0}).to_list(100)
+    
+    if not packaging:
+        packaging = [
+            {"id": "1", "name": "200L Drum", "net_weight_kg": 200, "type": "drum"},
+            {"id": "2", "name": "1000L IBC", "net_weight_kg": 1000, "type": "ibc"},
+            {"id": "3", "name": "25L Jerrycan", "net_weight_kg": 25, "type": "jerrycan"},
+            {"id": "4", "name": "Bulk", "net_weight_kg": 0, "type": "bulk"},
+            {"id": "5", "name": "ISO Tank", "net_weight_kg": 25000, "type": "tank"}
+        ]
+    
+    return packaging
+
+@api_router.post("/settings/packaging-types")
+async def add_packaging_type(data: dict, current_user: dict = Depends(get_current_user)):
+    """Add a new packaging type"""
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Only admin can add packaging types")
+    
+    packaging = {
+        "id": str(uuid.uuid4()),
+        "name": data.get("name"),
+        "net_weight_kg": data.get("net_weight_kg", 0),
+        "type": data.get("type", "other")
+    }
+    
+    await db.packaging_types.insert_one(packaging)
+    return await db.packaging_types.find_one({"id": packaging["id"]}, {"_id": 0})
+
+# ==================== STOCK MANAGEMENT ====================
+
+@api_router.get("/stock/all")
+async def get_all_stock(current_user: dict = Depends(get_current_user)):
+    """Get all stock items (products, raw materials, packaging)"""
+    
+    # Get products
+    products = await db.products.find({}, {"_id": 0}).to_list(1000)
+    
+    # Get inventory items (raw materials)
+    inventory = await db.inventory_items.find({}, {"_id": 0}).to_list(1000)
+    
+    # Get inventory balances
+    balances = await db.inventory_balances.find({}, {"_id": 0}).to_list(1000)
+    balance_map = {b.get("item_id"): b for b in balances}
+    
+    # Enrich products with stock info
+    stock_items = []
+    
+    for product in products:
+        stock_items.append({
+            "id": product.get("id"),
+            "name": product.get("name"),
+            "sku": product.get("sku"),
+            "type": "FINISHED_PRODUCT",
+            "current_stock": product.get("current_stock", 0),
+            "unit": product.get("unit", "units"),
+            "category": product.get("category", "Product")
+        })
+    
+    for item in inventory:
+        balance = balance_map.get(item.get("id"), {})
+        stock_items.append({
+            "id": item.get("id"),
+            "name": item.get("name"),
+            "sku": item.get("sku"),
+            "type": item.get("type", "RAW_MATERIAL"),
+            "current_stock": balance.get("on_hand", item.get("quantity", 0)),
+            "reserved": balance.get("reserved", 0),
+            "available": balance.get("on_hand", 0) - balance.get("reserved", 0),
+            "unit": item.get("unit", "KG"),
+            "category": item.get("category", "Raw Material")
+        })
+    
+    return stock_items
+
+@api_router.put("/stock/{item_id}/adjust")
+async def adjust_stock(item_id: str, adjustment: float, reason: str = "", current_user: dict = Depends(get_current_user)):
+    """Manually adjust stock for an item"""
+    if current_user["role"] not in ["admin", "inventory"]:
+        raise HTTPException(status_code=403, detail="Only admin/inventory can adjust stock")
+    
+    # Try to find in products first
+    product = await db.products.find_one({"id": item_id}, {"_id": 0})
+    if product:
+        new_stock = max(0, product.get("current_stock", 0) + adjustment)
+        await db.products.update_one(
+            {"id": item_id},
+            {"$set": {"current_stock": new_stock}}
+        )
+        
+        # Log adjustment
+        await db.stock_adjustments.insert_one({
+            "id": str(uuid.uuid4()),
+            "item_id": item_id,
+            "item_type": "product",
+            "item_name": product.get("name"),
+            "adjustment": adjustment,
+            "new_stock": new_stock,
+            "reason": reason,
+            "adjusted_by": current_user["id"],
+            "adjusted_at": datetime.now(timezone.utc).isoformat()
+        })
+        
+        return {"success": True, "new_stock": new_stock}
+    
+    # Try inventory items
+    item = await db.inventory_items.find_one({"id": item_id}, {"_id": 0})
+    if item:
+        balance = await db.inventory_balances.find_one({"item_id": item_id}, {"_id": 0})
+        current = balance.get("on_hand", 0) if balance else 0
+        new_stock = max(0, current + adjustment)
+        
+        await db.inventory_balances.update_one(
+            {"item_id": item_id},
+            {"$set": {"on_hand": new_stock}},
+            upsert=True
+        )
+        
+        await db.stock_adjustments.insert_one({
+            "id": str(uuid.uuid4()),
+            "item_id": item_id,
+            "item_type": "inventory",
+            "item_name": item.get("name"),
+            "adjustment": adjustment,
+            "new_stock": new_stock,
+            "reason": reason,
+            "adjusted_by": current_user["id"],
+            "adjusted_at": datetime.now(timezone.utc).isoformat()
+        })
+        
+        return {"success": True, "new_stock": new_stock}
+    
+    raise HTTPException(status_code=404, detail="Item not found")
+
+@api_router.post("/stock/add-item")
+async def add_stock_item(data: dict, current_user: dict = Depends(get_current_user)):
+    """Manually add a new stock item (product or packaging)"""
+    if current_user["role"] not in ["admin", "inventory"]:
+        raise HTTPException(status_code=403, detail="Only admin/inventory can add stock items")
+    
+    item_type = data.get("type", "RAW_MATERIAL")
+    
+    if item_type == "FINISHED_PRODUCT":
+        # Add as product
+        product_id = str(uuid.uuid4())
+        product = {
+            "id": product_id,
+            "name": data.get("name"),
+            "sku": data.get("sku") or f"PRD-{product_id[:6].upper()}",
+            "category": data.get("category", "Product"),
+            "current_stock": data.get("quantity", 0),
+            "unit": data.get("unit", "units"),
+            "price_per_unit": data.get("price", 0),
+            "created_at": datetime.now(timezone.utc).isoformat()
+        }
+        await db.products.insert_one(product)
+        return await db.products.find_one({"id": product_id}, {"_id": 0})
+    else:
+        # Add as inventory item
+        item_id = str(uuid.uuid4())
+        item = {
+            "id": item_id,
+            "name": data.get("name"),
+            "sku": data.get("sku") or f"INV-{item_id[:6].upper()}",
+            "type": item_type,
+            "category": data.get("category", "Raw Material"),
+            "unit": data.get("unit", "KG"),
+            "created_at": datetime.now(timezone.utc).isoformat()
+        }
+        await db.inventory_items.insert_one(item)
+        
+        # Add initial balance
+        if data.get("quantity", 0) > 0:
+            await db.inventory_balances.insert_one({
+                "item_id": item_id,
+                "on_hand": data.get("quantity", 0),
+                "reserved": 0
+            })
+        
+        return await db.inventory_items.find_one({"id": item_id}, {"_id": 0})
+
+@api_router.get("/stock/adjustments")
+async def get_stock_adjustments(current_user: dict = Depends(get_current_user)):
+    """Get stock adjustment history"""
+    adjustments = await db.stock_adjustments.find({}, {"_id": 0}).sort("adjusted_at", -1).to_list(100)
+    return adjustments
+
+# ==================== QC REPORTS FOR PAYABLES ====================
+
+@api_router.get("/payables/qc-reports")
+async def get_qc_reports_for_payables(current_user: dict = Depends(get_current_user)):
+    """Get QC reports that payables needs to review before making payments"""
+    
+    # Get all passed QC inspections that are linked to GRNs
+    qc_inspections = await db.qc_inspections.find(
+        {"status": "PASSED", "ref_type": "INWARD"},
+        {"_id": 0}
+    ).sort("completed_at", -1).to_list(100)
+    
+    # Enrich with GRN and supplier info
+    reports = []
+    for qc in qc_inspections:
+        # Get security checklist for vehicle info
+        checklist = await db.security_checklists.find_one(
+            {"id": qc.get("security_checklist_id")},
+            {"_id": 0}
+        )
+        
+        # Get GRN
+        grn = await db.grn.find_one({"qc_inspection_id": qc.get("id")}, {"_id": 0})
+        
+        # Get transport/PO info
+        transport = await db.transport_inward.find_one({"id": qc.get("ref_id")}, {"_id": 0})
+        po = None
+        if transport and transport.get("po_id"):
+            po = await db.purchase_orders.find_one({"id": transport.get("po_id")}, {"_id": 0})
+        
+        reports.append({
+            "qc_number": qc.get("qc_number"),
+            "qc_id": qc.get("id"),
+            "supplier": transport.get("supplier_name") if transport else "-",
+            "vehicle_number": checklist.get("vehicle_number") if checklist else "-",
+            "quantity": qc.get("net_weight"),
+            "product": qc.get("product_name") or (po.get("lines", [{}])[0].get("item_name") if po else "-"),
+            "po_number": po.get("po_number") if po else transport.get("po_number") if transport else "-",
+            "status": "PASSED",
+            "test_results": qc.get("test_results", {}),
+            "inspector_notes": qc.get("inspector_notes"),
+            "batch_number": qc.get("batch_number"),
+            "completed_at": qc.get("completed_at"),
+            "grn_number": grn.get("grn_number") if grn else None,
+            "payment_status": grn.get("review_status") if grn else "PENDING"
+        })
+    
+    return reports
+
+@api_router.get("/payables/qc-report/{qc_id}")
+async def get_qc_report_detail(qc_id: str, current_user: dict = Depends(get_current_user)):
+    """Get detailed QC report for a specific inspection"""
+    
+    qc = await db.qc_inspections.find_one({"id": qc_id}, {"_id": 0})
+    if not qc:
+        raise HTTPException(status_code=404, detail="QC inspection not found")
+    
+    # Get all related info
+    checklist = await db.security_checklists.find_one(
+        {"id": qc.get("security_checklist_id")},
+        {"_id": 0}
+    )
+    
+    grn = await db.grn.find_one({"qc_inspection_id": qc_id}, {"_id": 0})
+    transport = await db.transport_inward.find_one({"id": qc.get("ref_id")}, {"_id": 0})
+    
+    po = None
+    po_lines = []
+    if transport and transport.get("po_id"):
+        po = await db.purchase_orders.find_one({"id": transport.get("po_id")}, {"_id": 0})
+        po_lines = await db.purchase_order_lines.find({"po_id": transport.get("po_id")}, {"_id": 0}).to_list(100)
+    
+    return {
+        "qc_inspection": qc,
+        "security_checklist": checklist,
+        "grn": grn,
+        "transport": transport,
+        "purchase_order": po,
+        "po_lines": po_lines
+    }
+
+# ==================== IMPORT WINDOW UPDATE ====================
+
+@api_router.get("/imports")
+async def get_imports(status: Optional[str] = None, current_user: dict = Depends(get_current_user)):
+    """Get all import records"""
+    query = {}
+    if status:
+        query["status"] = status
+    
+    imports = await db.imports.find(query, {"_id": 0}).sort("created_at", -1).to_list(100)
+    return imports
+
+@api_router.put("/imports/{import_id}/documents")
+async def update_import_documents(import_id: str, documents: dict, current_user: dict = Depends(get_current_user)):
+    """Update import document checklist"""
+    result = await db.imports.update_one(
+        {"id": import_id},
+        {"$set": {"document_checklist": documents}}
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Import not found")
+    
+    return await db.imports.find_one({"id": import_id}, {"_id": 0})
+
+@api_router.put("/imports/{import_id}/move-to-transport")
+async def move_import_to_transport(import_id: str, current_user: dict = Depends(get_current_user)):
+    """Move import to transport window (Inward Import/Logistics)"""
+    
+    imp = await db.imports.find_one({"id": import_id}, {"_id": 0})
+    if not imp:
+        raise HTTPException(status_code=404, detail="Import not found")
+    
+    # Create transport inward record
+    transport_number = await generate_sequence("TIN", "transport_inward")
+    
+    transport = {
+        "id": str(uuid.uuid4()),
+        "transport_number": transport_number,
+        "import_id": import_id,
+        "po_id": imp.get("po_id"),
+        "po_number": imp.get("po_number"),
+        "supplier_name": imp.get("supplier_name"),
+        "incoterm": imp.get("incoterm"),
+        "source": "IMPORT",
+        "status": "PENDING",
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    
+    await db.transport_inward.insert_one(transport)
+    
+    # Update import status
+    await db.imports.update_one(
+        {"id": import_id},
+        {"$set": {"status": "IN_TRANSPORT", "transport_number": transport_number}}
+    )
+    
+    return {"success": True, "transport_number": transport_number}
+
+
 app.include_router(api_router)
 
 app.add_middleware(
