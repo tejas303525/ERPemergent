@@ -130,12 +130,21 @@ class QuotationCreate(BaseModel):
     items: List[QuotationItem]
     currency: str = "USD"  # USD, AED, EUR
     order_type: str = "local"  # local or export
-    incoterm: Optional[str] = None  # CFR, FOB, CIF, etc.
+    incoterm: Optional[str] = None  # CFR, FOB, CIF, EXW, DDP
+    container_type: Optional[str] = None  # 20ft, 40ft, iso_tank, bulk_tanker_45, etc.
     port_of_loading: Optional[str] = None
+    port_of_discharge: Optional[str] = None
     delivery_place: Optional[str] = None
-    payment_terms: str = "Cash"  # LC, CAD, Cash
+    country_of_origin: Optional[str] = "UAE"
+    country_of_destination: Optional[str] = None
+    payment_terms: str = "Cash"  # LC, CAD, Cash, TT, Net 30
     validity_days: int = 30
     notes: Optional[str] = None
+    required_documents: List[str] = []  # List of document type IDs
+    include_vat: bool = True
+    vat_rate: float = 0.0
+    vat_amount: float = 0.0
+    total_weight_mt: float = 0.0
 
 class Quotation(QuotationCreate):
     model_config = ConfigDict(extra="ignore")
