@@ -1287,6 +1287,36 @@ async def update_shipping_cro(booking_id: str, data: ShippingBookingUpdate, curr
             # Send email notification to Transport and Security
             updated_booking = await db.shipping_bookings.find_one({"id": booking_id}, {"_id": 0})
             await notify_cro_received(updated_booking, transport_schedule.model_dump())
+            
+            # Create transport_outward record for Transport Window
+            transport_out_number = await generate_sequence("TOUT", "transport_outward")
+            # Get customer from first job order
+            customer_name = ""
+            if booking.get("job_order_ids"):
+                first_job = await db.job_orders.find_one({"id": booking["job_order_ids"][0]}, {"_id": 0})
+                if first_job:
+                    so = await db.sales_orders.find_one({"id": first_job.get("sales_order_id")}, {"_id": 0})
+                    if so:
+                        customer_name = so.get("customer_name", "")
+            
+            transport_outward = {
+                "id": str(uuid.uuid4()),
+                "transport_number": transport_out_number,
+                "shipping_booking_id": booking_id,
+                "booking_number": booking["booking_number"],
+                "cro_number": data.cro_number,
+                "job_numbers": job_numbers,
+                "customer_name": customer_name,
+                "transport_type": "CONTAINER",
+                "container_number": None,
+                "container_type": booking.get("container_type"),
+                "destination": booking.get("port_of_discharge"),
+                "dispatch_date": None,
+                "delivery_date": None,
+                "status": "PENDING",
+                "created_at": datetime.now(timezone.utc).isoformat()
+            }
+            await db.transport_outward.insert_one(transport_outward)
     
     return {"message": "CRO details updated and transport schedule generated"}
 
