@@ -4189,6 +4189,99 @@ async def convert_rfq_to_po(rfq_id: str, current_user: dict = Depends(get_curren
     
     return {"success": True, "message": f"PO {po_number} created from RFQ", "po_id": po.id, "po_number": po_number}
 
+
+# ==================== PHASE 2: GENERATE PO DIRECTLY (Bug 5 Fix) ====================
+
+class GeneratePORequest(BaseModel):
+    supplier_id: str
+    supplier_name: str = ""
+    billing_company: Optional[str] = None
+    billing_address: Optional[str] = None
+    shipping_company: Optional[str] = None
+    shipping_address: Optional[str] = None
+    delivery_date: Optional[str] = None
+    payment_terms: str = "Net 30"
+    incoterm: str = "EXW"
+    currency: str = "USD"
+    total_amount: float = 0
+    lines: List[Dict[str, Any]] = []
+    notes: Optional[str] = None
+
+@api_router.post("/purchase-orders/generate")
+async def generate_po_directly(data: GeneratePORequest, current_user: dict = Depends(get_current_user)):
+    """
+    Generate PO directly from procurement shortages (Phase 2 - Bug 5 fix).
+    This bypasses the RFQ process and creates a PO with status DRAFT
+    that goes immediately to Finance Approval.
+    """
+    if current_user["role"] not in ["admin", "procurement"]:
+        raise HTTPException(status_code=403, detail="Only admin/procurement can generate POs")
+    
+    if not data.lines:
+        raise HTTPException(status_code=400, detail="No items provided")
+    
+    # Generate PO number
+    po_number = await generate_sequence("PO", "purchase_orders")
+    
+    # Create PO with DRAFT status (pending finance approval)
+    po = PurchaseOrder(
+        supplier_id=data.supplier_id,
+        supplier_name=data.supplier_name,
+        currency=data.currency,
+        total_amount=data.total_amount,
+        notes=data.notes,
+        po_number=po_number,
+        status="DRAFT",  # Will require finance approval
+        created_by=current_user["id"]
+    )
+    await db.purchase_orders.insert_one(po.model_dump())
+    
+    # Create PO lines
+    for line_data in data.lines:
+        # Lookup item details
+        item = await db.inventory_items.find_one({"id": line_data.get("item_id")}, {"_id": 0})
+        item_name = line_data.get("item_name") or (item.get("name") if item else "Unknown")
+        
+        po_line = PurchaseOrderLine(
+            po_id=po.id,
+            item_id=line_data.get("item_id"),
+            item_type=line_data.get("item_type", "RAW"),
+            qty=line_data.get("qty", 0),
+            uom=line_data.get("uom", "KG"),
+            unit_price=line_data.get("unit_price", 0),
+            required_by=data.delivery_date
+        )
+        po_line_dict = po_line.model_dump()
+        po_line_dict["item_name"] = item_name
+        po_line_dict["job_numbers"] = line_data.get("job_numbers", [])
+        await db.purchase_order_lines.insert_one(po_line_dict)
+        
+        # Clear the material shortage for this item
+        await db.material_shortages.update_many(
+            {"item_id": line_data.get("item_id"), "status": "PENDING"},
+            {"$set": {"status": "PO_CREATED", "po_id": po.id, "po_number": po_number}}
+        )
+    
+    # Create notification for Finance
+    await create_notification(
+        event_type="PO_PENDING_APPROVAL",
+        title=f"PO Pending Approval: {po_number}",
+        message=f"New PO from {data.supplier_name} for {data.currency} {data.total_amount:.2f} requires finance approval",
+        link="/finance-approval",
+        ref_type="PO",
+        ref_id=po.id,
+        target_roles=["admin", "finance"],
+        notification_type="warning"
+    )
+    
+    return {
+        "success": True,
+        "message": f"PO {po_number} created and sent to Finance Approval",
+        "po_id": po.id,
+        "po_number": po_number
+    }
+
+
 # ==================== PHASE 6: FINANCE APPROVAL ====================
 
 @api_router.put("/purchase-orders/{po_id}/finance-approve")
