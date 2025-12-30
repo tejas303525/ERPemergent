@@ -409,6 +409,39 @@ export default function JobOrdersPage() {
                           />
                         </div>
                       </div>
+
+                      {/* Label Confirmation & Schedule */}
+                      <div className="grid grid-cols-3 gap-4 mt-4 p-3 border border-blue-500/30 rounded-lg bg-blue-500/5">
+                        <div>
+                          <Label>Label Confirmation</Label>
+                          <Input
+                            value={form.label_confirmation}
+                            onChange={(e) => setForm({...form, label_confirmation: e.target.value})}
+                            placeholder="Label/Batch confirmation"
+                          />
+                        </div>
+                        <div>
+                          <Label>Schedule Date</Label>
+                          <Input
+                            type="datetime-local"
+                            value={form.schedule_date}
+                            onChange={(e) => setForm({...form, schedule_date: e.target.value})}
+                          />
+                        </div>
+                        <div>
+                          <Label>Shift</Label>
+                          <Select value={form.schedule_shift} onValueChange={(v) => setForm({...form, schedule_shift: v})}>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select shift" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {SHIFTS.map(s => (
+                                <SelectItem key={s} value={s}>{s}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
                     </div>
                   )}
 
