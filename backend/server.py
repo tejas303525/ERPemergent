@@ -218,17 +218,22 @@ class JobOrderCreate(BaseModel):
     sales_order_id: str
     product_id: str
     product_name: str
+    product_sku: Optional[str] = None
     quantity: float
+    packaging: Optional[str] = "Bulk"
+    delivery_date: Optional[str] = None
     bom: List[BOMItem] = []
     priority: str = "normal"  # low, normal, high, urgent
     notes: Optional[str] = None
+    procurement_required: bool = False
+    material_shortages: List[Dict] = []
 
 class JobOrder(JobOrderCreate):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     job_number: str = ""
     spa_number: str = ""
-    status: str = "pending"  # pending, in_production, procurement, ready_for_dispatch, dispatched
+    status: str = "pending"  # pending, approved, in_production, procurement, ready_for_dispatch, dispatched
     procurement_status: str = "not_required"  # not_required, pending, complete
     production_start: Optional[str] = None
     production_end: Optional[str] = None
