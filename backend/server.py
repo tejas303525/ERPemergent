@@ -5092,6 +5092,34 @@ async def get_qc_inspections(status: Optional[str] = None, current_user: dict = 
     inspections = await db.qc_inspections.find(query, {"_id": 0}).sort("created_at", -1).to_list(1000)
     return inspections
 
+@api_router.get("/qc/inspections/completed")
+async def get_completed_qc_inspections(current_user: dict = Depends(get_current_user)):
+    """Get completed QC inspections for Payables report"""
+    inspections = await db.qc_inspections.find(
+        {"status": {"$in": ["PASS", "FAIL", "COMPLETED"]}},
+        {"_id": 0}
+    ).sort("completed_at", -1).to_list(1000)
+    
+    # Enrich with transport/PO info
+    enriched = []
+    for insp in inspections:
+        # Try to get transport info
+        if insp.get("ref_type") == "TRANSPORT" and insp.get("ref_id"):
+            transport = await db.transport_inward.find_one({"id": insp["ref_id"]}, {"_id": 0})
+            if transport:
+                insp["supplier_name"] = transport.get("supplier_name")
+                insp["po_number"] = transport.get("po_number")
+        
+        # Get items from security checklist if available
+        if insp.get("checklist_id"):
+            checklist = await db.security_checklists.find_one({"id": insp["checklist_id"]}, {"_id": 0})
+            if checklist and checklist.get("items"):
+                insp["items"] = checklist["items"]
+        
+        enriched.append(insp)
+    
+    return enriched
+
 
 # ==================== PHASE 1: TRANSPORT WINDOW (4 Tables) ====================
 
