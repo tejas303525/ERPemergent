@@ -1,15 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import { payablesAPI, grnAPI } from '../lib/api';
+import api from '../lib/api';
 import { Button } from '../components/ui/button';
-import { DollarSign, Check, Clock, AlertTriangle, FileText, Book, TrendingDown, Building } from 'lucide-react';
+import { Badge } from '../components/ui/badge';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
+import { DollarSign, Check, Clock, AlertTriangle, FileText, Book, TrendingDown, Building, ClipboardCheck, Eye, Package } from 'lucide-react';
 import { toast } from 'sonner';
 
 const PayablesPage = () => {
   const [bills, setBills] = useState([]);
   const [aging, setAging] = useState({ current: 0, '30_days': 0, '60_days': 0, '90_plus': 0 });
   const [pendingGRNs, setPendingGRNs] = useState([]);
+  const [qcReports, setQcReports] = useState([]);
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('ledger');
+  const [selectedQCReport, setSelectedQCReport] = useState(null);
 
   useEffect(() => {
     loadData();
@@ -18,13 +23,15 @@ const PayablesPage = () => {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [billsRes, grnsRes] = await Promise.all([
+      const [billsRes, grnsRes, qcRes] = await Promise.all([
         payablesAPI.getBills(),
-        grnAPI.getPendingPayables()
+        grnAPI.getPendingPayables(),
+        api.get('/qc/inspections/completed').catch(() => ({ data: [] }))
       ]);
       setBills(billsRes.data.bills || []);
       setAging(billsRes.data.aging || {});
       setPendingGRNs(grnsRes.data || []);
+      setQcReports(qcRes.data || []);
     } catch (error) {
       toast.error('Failed to load payables data');
     } finally {
