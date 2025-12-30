@@ -75,6 +75,7 @@ export default function QuotationsPage() {
     order_type: 'local',
     incoterm: '',
     container_type: '',
+    container_count: 1,
     port_of_loading: '',
     port_of_discharge: '',
     delivery_place: '',
