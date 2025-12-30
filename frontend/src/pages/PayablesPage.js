@@ -372,7 +372,132 @@ const PayablesPage = () => {
           )}
         </>
       )}
+
+      {/* QC Report Details Modal */}
+      {selectedQCReport && (
+        <QCReportModal
+          report={selectedQCReport}
+          onClose={() => setSelectedQCReport(null)}
+        />
+      )}
     </div>
+  );
+};
+
+// QC Report Modal Component
+const QCReportModal = ({ report, onClose }) => {
+  return (
+    <Dialog open={true} onOpenChange={onClose}>
+      <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <ClipboardCheck className="w-5 h-5 text-emerald-500" />
+            QC Inspection Report - {report.inspection_number || report.qc_number}
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-6 py-4">
+          {/* Basic Info */}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <p className="text-sm text-muted-foreground">Supplier</p>
+              <p className="font-medium">{report.supplier_name || '-'}</p>
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">PO/Reference</p>
+              <p className="font-medium text-blue-400">{report.po_number || report.ref_number || '-'}</p>
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Inspection Result</p>
+              <Badge className={
+                report.result === 'PASS' ? 'bg-green-500/20 text-green-400' :
+                report.result === 'FAIL' ? 'bg-red-500/20 text-red-400' :
+                'bg-amber-500/20 text-amber-400'
+              }>
+                {report.result || report.status}
+              </Badge>
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Completed Date</p>
+              <p className="font-medium">{report.completed_at ? new Date(report.completed_at).toLocaleString() : '-'}</p>
+            </div>
+          </div>
+
+          {/* Items Inspected */}
+          <div>
+            <h3 className="font-semibold mb-2 flex items-center gap-2">
+              <Package className="w-4 h-4" />
+              Items/Materials Inspected
+            </h3>
+            <div className="bg-muted/20 rounded-lg overflow-hidden">
+              <table className="w-full">
+                <thead className="bg-muted/30">
+                  <tr>
+                    <th className="p-2 text-left text-xs font-medium text-muted-foreground">Item</th>
+                    <th className="p-2 text-left text-xs font-medium text-muted-foreground">Qty</th>
+                    <th className="p-2 text-left text-xs font-medium text-muted-foreground">Sampling Size</th>
+                    <th className="p-2 text-left text-xs font-medium text-muted-foreground">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(report.items || []).map((item, idx) => (
+                    <tr key={idx} className="border-t border-border/30">
+                      <td className="p-2">{item.name || item.product_name}</td>
+                      <td className="p-2 font-mono">{item.quantity} {item.unit || 'KG'}</td>
+                      <td className="p-2 font-mono">{item.sampling_size || '-'}</td>
+                      <td className="p-2">
+                        <Badge variant="outline" className={
+                          item.status === 'PASS' ? 'border-green-500 text-green-400' :
+                          item.status === 'FAIL' ? 'border-red-500 text-red-400' :
+                          'border-amber-500 text-amber-400'
+                        }>
+                          {item.status || 'Inspected'}
+                        </Badge>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Inspection Details */}
+          {report.inspection_details && (
+            <div>
+              <h3 className="font-semibold mb-2">Inspection Details</h3>
+              <div className="grid grid-cols-2 gap-3">
+                {Object.entries(report.inspection_details).map(([key, value]) => (
+                  <div key={key} className="flex justify-between p-2 bg-muted/20 rounded">
+                    <span className="text-muted-foreground capitalize">{key.replace(/_/g, ' ')}</span>
+                    <span className="font-medium">{typeof value === 'boolean' ? (value ? 'Yes' : 'No') : value}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Notes */}
+          {report.notes && (
+            <div>
+              <h3 className="font-semibold mb-2">Notes</h3>
+              <p className="p-3 bg-muted/20 rounded text-sm">{report.notes}</p>
+            </div>
+          )}
+
+          {/* Rejection Reason (if failed) */}
+          {report.result === 'FAIL' && report.rejection_reason && (
+            <div className="p-3 bg-red-500/10 border border-red-500/30 rounded">
+              <h3 className="font-semibold text-red-400 mb-1">Rejection Reason</h3>
+              <p className="text-sm">{report.rejection_reason}</p>
+            </div>
+          )}
+        </div>
+
+        <div className="flex justify-end">
+          <Button variant="outline" onClick={onClose}>Close</Button>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 };
 
