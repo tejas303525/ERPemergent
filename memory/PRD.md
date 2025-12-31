@@ -1,70 +1,68 @@
-# Manufacturing ERP System - Product Requirements Document
+# Manufacturing ERP System - PRD
 
-## Original Problem Statement
-Build a full Manufacturing ERP system with modules for Sales, Production, Inventory, Procurement, Shipping, QC, Security, and Finance.
+## Completed Fixes (December 31, 2025)
 
-## Completed Features (December 30, 2025)
+### P0 - Critical Bugs ✅
+1. **Quotation Total with VAT** - Fixed: Total now includes 5% VAT (subtotal + VAT)
+2. **Quotation Validity Dropdown** - Added: 7/14/30/45/60/90 days options
+3. **Settings Page CRUD** - Fixed: All tabs now support Add/Edit/Delete
+   - Vendors/Suppliers, Companies, Payment Terms, Document Templates, Container Types, Packaging Types
+4. **Stock Management Page** - Working: Route added, showing products and raw materials
+5. **RAW Materials in BOM** - Fixed: Now loads raw_material category products for BOM dropdown
 
-### Phase 2 Bug Fixes - COMPLETED ✅
-1. **Settings Page 404** - Fixed `/api/settings/all` endpoint
-2. **Quotation Approval 520 Error** - Fixed ObjectId serialization
-3. **Security Checklist 520 Error** - Fixed ObjectId serialization  
-4. **EXW Incoterm Routing** - EXW POs now route to Transport Window
-5. **Supplier 404 Error** - Added GET/PUT/DELETE `/api/suppliers/{id}` endpoints
-6. **Job Order Status Update** - Working correctly
+### P1 - Workflow Fixes ✅
+6. **Job Order - Show ALL Products from SPA** - Fixed: Table view instead of dropdown
+7. **Procurement Cleanup** - Fixed: Items with POs created are filtered out (pending_shortage = 0)
+8. **Production Schedule Status Dropdown** - Added: in_production, production_completed, rescheduled
+9. **Reschedule Modal** - Added: Select new date and shift when status is "rescheduled"
 
-### Phase 2 Features - COMPLETED ✅
-1. **Incoterm dropdown for local quotations** - Added to quotation form
-2. **Packaging Types with Net Weight** - Configurable in Settings page
-3. **Stock Management Page** - Full implementation with:
-   - Stock Items tab with current stock, reserved, available
-   - Adjustment History tab
-   - Add Item functionality
-   - Manual stock adjustment
-4. **Import Window Updates** - Documents changed to:
-   - Delivery Order
-   - Bill of Lading
-   - EPDA
-   - SIRA
-   - "Move to Transport" action button
-5. **QC Reports for Payables** - New tab in Payables page showing completed QC inspections
-6. **Production Schedule** - Now includes `in_production` and `approved` jobs
-   - JOB-000013 is visible on 2026-01-01 (Thursday)
+### Backend Endpoints Added
+- `PUT /api/suppliers/{id}` - Update supplier
+- `DELETE /api/suppliers/{id}` - Delete supplier
+- `GET/POST/PUT/DELETE /api/settings/companies/{id}` - Company CRUD
+- `GET/POST/PUT/DELETE /api/settings/payment-terms/{id}` - Payment Terms CRUD
+- `GET/POST/PUT/DELETE /api/settings/document-templates/{id}` - Document Templates CRUD
+- `GET/POST/PUT/DELETE /api/settings/container-types/{id}` - Container Types CRUD
+- `PUT /api/job-orders/{id}/reschedule` - Reschedule job order
 
-## Incoterm-Based Workflow
-- **EXW** → Transport Window (Inward EXW)
-- **DDP** → Security Gate → QC
-- **FOB/CFR/CIF** → Import Window → Transport (Import/Logistics)
-
-## Test Credentials
-- Admin: `admin@erp.com` / `admin123`
-- Finance: `finance@erp.com` / `finance123`
-- Security: `security@erp.com` / `security123`
-
-## Backend API Endpoints (New/Updated)
-- GET/PUT/DELETE `/api/suppliers/{supplier_id}` - Single supplier operations
-- GET `/api/qc/inspections/completed` - Completed QC inspections for Payables
-- POST `/api/imports/{import_id}/move-to-transport` - Move cleared imports to transport
-- PUT `/api/imports/{import_id}/document` - Update single import document
-- PUT `/api/imports/{import_id}/status` - Update import status
-- PUT `/api/settings/packaging-types/{id}` - Update packaging type
-- GET/POST `/api/stock/adjustments` - Stock adjustment history
-
-## Frontend Routes
-- `/stock-management` - Stock Management page
-- `/settings` - Settings with Packaging Types tab
-- `/import-window` - Import Window with new documents
-- `/payables` - Payables with QC Reports tab
+### Valid Job Order Statuses
+- pending
+- approved
+- in_production
+- production_completed
+- procurement
+- ready_for_dispatch
+- dispatched
+- rescheduled
 
 ## Remaining Tasks
 
-### P1 - High Priority
-- [ ] Duplicate Job Orders - Prevent duplicate creation for same item
-- [ ] Transportation PO Generation - Generate PO after transport booking
+### P2 - GRN & Status Updates
+- [ ] GRN page - Production tab showing materials with status=='production_completed'
+- [ ] Auto-update to READY_TO_DISPATCH when stock is ready
+- [ ] Procurement column says "Material Ready"
+- [ ] GRN quantity display showing how much qty added to stock
 
-### P2 - Medium Priority  
-- [ ] Job Order SPA Selection - Show all SPAs for a product
-- [ ] Full System Documentation
+### P3 - Dispatch & Document Flow
+- [ ] READY TO DISPATCH routing by incoterm:
+  - EXW → Transport Window (Local Dispatch)
+  - DDP → Security (Outward) → QC → DO
+- [ ] Document generation:
+  - Local: DO, Invoice, COA
+  - Export: DO, Packing List, COO, BL draft
+- [ ] Email integration for documents
+- [ ] Notify Receivables
 
-### Technical Debt
-- [ ] Refactor server.py (6500+ lines) into smaller routers
+### P4 - QC Enhancements
+- [ ] QC checklist fields: Supplier, Items, qty, inspection status, Sampling size
+- [ ] QC Report viewer with full details
+
+### Technical Notes
+- Shortages are calculated dynamically from BOMs vs available stock
+- PO quantities are subtracted from shortages (pending_shortage field)
+- Auto-reschedule EOD not yet implemented (requires scheduled task)
+
+## Test Credentials
+- Admin: admin@erp.com / admin123
+- Finance: finance@erp.com / finance123
+- Security: security@erp.com / security123
