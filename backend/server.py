@@ -6327,8 +6327,188 @@ async def add_company(data: dict, current_user: dict = Depends(get_current_user)
         "type": data.get("type", "billing")
     }
     
-    await db.companies.insert_one(company)
-    return await db.companies.find_one({"id": company["id"]}, {"_id": 0})
+    await db.companies.insert_one({**company})
+    return company
+
+@api_router.put("/settings/companies/{company_id}")
+async def update_company(company_id: str, data: dict, current_user: dict = Depends(get_current_user)):
+    """Update a company"""
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Only admin can update companies")
+    
+    update_data = {k: v for k, v in data.items() if v is not None and k != "id"}
+    result = await db.companies.update_one({"id": company_id}, {"$set": update_data})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Company not found")
+    return await db.companies.find_one({"id": company_id}, {"_id": 0})
+
+@api_router.delete("/settings/companies/{company_id}")
+async def delete_company(company_id: str, current_user: dict = Depends(get_current_user)):
+    """Delete a company"""
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Only admin can delete companies")
+    
+    result = await db.companies.delete_one({"id": company_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Company not found")
+    return {"message": "Company deleted"}
+
+@api_router.get("/settings/payment-terms")
+async def get_payment_terms(current_user: dict = Depends(get_current_user)):
+    """Get payment terms"""
+    terms = await db.payment_terms.find({}, {"_id": 0}).to_list(100)
+    if not terms:
+        terms = [
+            {"id": "1", "name": "Cash", "days": 0, "description": "Payment on delivery"},
+            {"id": "2", "name": "Net 15", "days": 15, "description": "Payment within 15 days"},
+            {"id": "3", "name": "Net 30", "days": 30, "description": "Payment within 30 days"},
+            {"id": "4", "name": "Net 60", "days": 60, "description": "Payment within 60 days"},
+            {"id": "5", "name": "LC", "days": 0, "description": "Letter of Credit"},
+        ]
+    return terms
+
+@api_router.post("/settings/payment-terms")
+async def add_payment_term(data: dict, current_user: dict = Depends(get_current_user)):
+    """Add a new payment term"""
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Only admin can add payment terms")
+    
+    term = {
+        "id": str(uuid.uuid4()),
+        "name": data.get("name"),
+        "days": data.get("days", 0),
+        "description": data.get("description", "")
+    }
+    
+    await db.payment_terms.insert_one({**term})
+    return term
+
+@api_router.put("/settings/payment-terms/{term_id}")
+async def update_payment_term(term_id: str, data: dict, current_user: dict = Depends(get_current_user)):
+    """Update a payment term"""
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Only admin can update payment terms")
+    
+    update_data = {k: v for k, v in data.items() if v is not None and k != "id"}
+    result = await db.payment_terms.update_one({"id": term_id}, {"$set": update_data})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Payment term not found")
+    return await db.payment_terms.find_one({"id": term_id}, {"_id": 0})
+
+@api_router.delete("/settings/payment-terms/{term_id}")
+async def delete_payment_term(term_id: str, current_user: dict = Depends(get_current_user)):
+    """Delete a payment term"""
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Only admin can delete payment terms")
+    
+    result = await db.payment_terms.delete_one({"id": term_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Payment term not found")
+    return {"message": "Payment term deleted"}
+
+@api_router.get("/settings/document-templates")
+async def get_document_templates(current_user: dict = Depends(get_current_user)):
+    """Get document templates"""
+    docs = await db.document_templates.find({}, {"_id": 0}).to_list(100)
+    if not docs:
+        docs = [
+            {"id": "1", "name": "Commercial Invoice", "required_for": "all"},
+            {"id": "2", "name": "Packing List", "required_for": "export"},
+            {"id": "3", "name": "Certificate of Origin (COO)", "required_for": "export"},
+            {"id": "4", "name": "Certificate of Analysis (COA)", "required_for": "all"},
+            {"id": "5", "name": "Bill of Lading (B/L)", "required_for": "export"},
+            {"id": "6", "name": "Delivery Order (DO)", "required_for": "all"},
+        ]
+    return docs
+
+@api_router.post("/settings/document-templates")
+async def add_document_template(data: dict, current_user: dict = Depends(get_current_user)):
+    """Add a new document template"""
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Only admin can add document templates")
+    
+    doc = {
+        "id": str(uuid.uuid4()),
+        "name": data.get("name"),
+        "required_for": data.get("required_for", "all")
+    }
+    
+    await db.document_templates.insert_one({**doc})
+    return doc
+
+@api_router.put("/settings/document-templates/{doc_id}")
+async def update_document_template(doc_id: str, data: dict, current_user: dict = Depends(get_current_user)):
+    """Update a document template"""
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Only admin can update document templates")
+    
+    update_data = {k: v for k, v in data.items() if v is not None and k != "id"}
+    result = await db.document_templates.update_one({"id": doc_id}, {"$set": update_data})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Document template not found")
+    return await db.document_templates.find_one({"id": doc_id}, {"_id": 0})
+
+@api_router.delete("/settings/document-templates/{doc_id}")
+async def delete_document_template(doc_id: str, current_user: dict = Depends(get_current_user)):
+    """Delete a document template"""
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Only admin can delete document templates")
+    
+    result = await db.document_templates.delete_one({"id": doc_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Document template not found")
+    return {"message": "Document template deleted"}
+
+@api_router.get("/settings/container-types")
+async def get_container_types(current_user: dict = Depends(get_current_user)):
+    """Get container types"""
+    containers = await db.container_types.find({}, {"_id": 0}).to_list(100)
+    if not containers:
+        containers = [
+            {"id": "1", "value": "20ft", "label": "20ft Container", "max_mt": 18},
+            {"id": "2", "value": "40ft", "label": "40ft Container", "max_mt": 26},
+            {"id": "3", "value": "40ft_hc", "label": "40ft High Cube", "max_mt": 28},
+        ]
+    return containers
+
+@api_router.post("/settings/container-types")
+async def add_container_type(data: dict, current_user: dict = Depends(get_current_user)):
+    """Add a new container type"""
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Only admin can add container types")
+    
+    container = {
+        "id": str(uuid.uuid4()),
+        "value": data.get("value"),
+        "label": data.get("label"),
+        "max_mt": data.get("max_mt", 0)
+    }
+    
+    await db.container_types.insert_one({**container})
+    return container
+
+@api_router.put("/settings/container-types/{container_id}")
+async def update_container_type(container_id: str, data: dict, current_user: dict = Depends(get_current_user)):
+    """Update a container type"""
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Only admin can update container types")
+    
+    update_data = {k: v for k, v in data.items() if v is not None and k != "id"}
+    result = await db.container_types.update_one({"id": container_id}, {"$set": update_data})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Container type not found")
+    return await db.container_types.find_one({"id": container_id}, {"_id": 0})
+
+@api_router.delete("/settings/container-types/{container_id}")
+async def delete_container_type(container_id: str, current_user: dict = Depends(get_current_user)):
+    """Delete a container type"""
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Only admin can delete container types")
+    
+    result = await db.container_types.delete_one({"id": container_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Container type not found")
+    return {"message": "Container type deleted"}
 
 @api_router.get("/settings/packaging-types")
 async def get_packaging_types(current_user: dict = Depends(get_current_user)):
