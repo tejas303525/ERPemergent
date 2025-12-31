@@ -340,22 +340,42 @@ export default function JobOrdersPage() {
                     </Select>
                   </div>
 
-                  {/* Product Selection (if multiple items in SPA) */}
-                  {form.sales_order_id && getSelectedSalesOrderItems().length > 1 && (
+                  {/* Product Selection (if multiple items in SPA) - Show ALL products */}
+                  {form.sales_order_id && getSelectedSalesOrderItems().length > 0 && (
                     <div className="p-4 border border-amber-500/30 rounded-lg bg-amber-500/5">
-                      <h3 className="font-semibold mb-3">2. Select Product from SPA</h3>
-                      <Select value={form.product_id} onValueChange={handleProductFromSPA}>
-                        <SelectTrigger data-testid="product-select">
-                          <SelectValue placeholder="Select product to manufacture" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {getSelectedSalesOrderItems().map(item => (
-                            <SelectItem key={item.product_id} value={item.product_id}>
-                              {item.product_name} ({item.sku}) - Qty: {item.quantity} {item.packaging}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <h3 className="font-semibold mb-3">2. Products in this SPA ({getSelectedSalesOrderItems().length})</h3>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead className="bg-muted/30">
+                            <tr>
+                              <th className="p-2 text-left">Product</th>
+                              <th className="p-2 text-left">SKU</th>
+                              <th className="p-2 text-left">Quantity</th>
+                              <th className="p-2 text-left">Packaging</th>
+                              <th className="p-2 text-left">Action</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {getSelectedSalesOrderItems().map(item => (
+                              <tr key={item.product_id} className={`border-b border-border/30 ${form.product_id === item.product_id ? 'bg-green-500/10' : ''}`}>
+                                <td className="p-2 font-medium">{item.product_name}</td>
+                                <td className="p-2 text-muted-foreground">{item.sku}</td>
+                                <td className="p-2 font-mono">{item.quantity}</td>
+                                <td className="p-2">{item.packaging || 'Bulk'}</td>
+                                <td className="p-2">
+                                  <Button 
+                                    size="sm" 
+                                    variant={form.product_id === item.product_id ? 'default' : 'outline'}
+                                    onClick={() => handleProductFromSPA(item.product_id)}
+                                  >
+                                    {form.product_id === item.product_id ? 'Selected' : 'Select'}
+                                  </Button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
                     </div>
                   )}
 
