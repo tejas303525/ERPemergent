@@ -302,19 +302,64 @@ const DayCard = ({ day, isToday, onStatusChange, onReschedule }) => {
                     )}
                   </td>
                   <td className="py-2 px-2">
-                    <span className={`px-2 py-0.5 rounded text-xs ${
-                      job.status === 'in_production' ? 'bg-blue-500/20 text-blue-400' :
-                      job.status === 'approved' ? 'bg-green-500/20 text-green-400' :
-                      'bg-gray-500/20 text-gray-400'
-                    }`}>
-                      {job.status?.toUpperCase()}
-                    </span>
+                    <select
+                      className="bg-background border border-border rounded px-2 py-1 text-xs"
+                      value={job.status}
+                      onChange={(e) => handleStatusChange(job, e.target.value)}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      {JOB_STATUSES.map(s => (
+                        <option key={s.value} value={s.value}>{s.label}</option>
+                      ))}
+                    </select>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
+      )}
+
+      {/* Reschedule Modal */}
+      {rescheduleModal && (
+        <Dialog open={true} onOpenChange={() => setRescheduleModal(null)}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Reschedule Job {rescheduleModal.job_number}</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div>
+                <Label>New Scheduled Date *</Label>
+                <Input
+                  type="date"
+                  value={newDate}
+                  onChange={(e) => setNewDate(e.target.value)}
+                  min={new Date().toISOString().split('T')[0]}
+                />
+              </div>
+              <div>
+                <Label>Shift</Label>
+                <select
+                  className="w-full bg-background border border-border rounded px-3 py-2"
+                  value={newShift}
+                  onChange={(e) => setNewShift(e.target.value)}
+                >
+                  <option value="Morning">Morning (6AM-2PM)</option>
+                  <option value="Evening">Evening (2PM-10PM)</option>
+                  <option value="Night">Night (10PM-6AM)</option>
+                </select>
+              </div>
+              <div className="text-sm text-muted-foreground">
+                <p>Product: {rescheduleModal.product_name}</p>
+                <p>Quantity: {rescheduleModal.quantity}</p>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setRescheduleModal(null)}>Cancel</Button>
+              <Button onClick={handleRescheduleConfirm}>Confirm Reschedule</Button>
+            </div>
+          </DialogContent>
+        </Dialog>
       )}
 
       {expanded && day.jobs.length === 0 && (
