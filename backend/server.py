@@ -1043,6 +1043,35 @@ async def update_job_status(job_id: str, status: str, current_user: dict = Depen
     
     return {"message": f"Job status updated to {status}"}
 
+@api_router.put("/job-orders/{job_id}/reschedule")
+async def reschedule_job_order(job_id: str, data: dict, current_user: dict = Depends(get_current_user)):
+    """Reschedule a job order to a new date"""
+    if current_user["role"] not in ["admin", "production", "procurement"]:
+        raise HTTPException(status_code=403, detail="Only admin/production/procurement can reschedule jobs")
+    
+    job = await db.job_orders.find_one({"id": job_id}, {"_id": 0})
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    
+    new_date = data.get("new_date")
+    new_shift = data.get("new_shift", "Morning")
+    
+    if not new_date:
+        raise HTTPException(status_code=400, detail="New date is required")
+    
+    update_data = {
+        "status": "rescheduled",
+        "schedule_date": new_date,
+        "schedule_shift": new_shift,
+        "rescheduled_from": job.get("schedule_date") or job.get("delivery_date"),
+        "rescheduled_at": datetime.now(timezone.utc).isoformat(),
+        "rescheduled_by": current_user["id"]
+    }
+    
+    await db.job_orders.update_one({"id": job_id}, {"$set": update_data})
+    
+    return {"message": f"Job rescheduled to {new_date}", "new_date": new_date, "new_shift": new_shift}
+
 # ==================== GRN ROUTES ====================
 
 @api_router.post("/grn", response_model=GRN)
