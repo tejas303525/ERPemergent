@@ -56,6 +56,15 @@ const COUNTRIES = [
 
 const VAT_RATE = 0.05; // 5% VAT for local orders
 
+const VALIDITY_OPTIONS = [
+  { value: 7, label: '7 Days' },
+  { value: 14, label: '14 Days' },
+  { value: 30, label: '30 Days' },
+  { value: 45, label: '45 Days' },
+  { value: 60, label: '60 Days' },
+  { value: 90, label: '90 Days' },
+];
+
 export default function QuotationsPage() {
   const { user } = useAuth();
   const [quotations, setQuotations] = useState([]);
