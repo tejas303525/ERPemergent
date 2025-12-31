@@ -148,8 +148,11 @@ const UnifiedProductionSchedulePage = () => {
 };
 
 // Day Card Component
-const DayCard = ({ day, isToday }) => {
+const DayCard = ({ day, isToday, onStatusChange, onReschedule }) => {
   const [expanded, setExpanded] = useState(isToday);
+  const [rescheduleModal, setRescheduleModal] = useState(null);
+  const [newDate, setNewDate] = useState('');
+  const [newShift, setNewShift] = useState('Morning');
   
   const utilizationColor = day.utilization >= 90 
     ? 'text-red-400' 
@@ -158,6 +161,40 @@ const DayCard = ({ day, isToday }) => {
       : 'text-green-400';
 
   const hasShortages = day.jobs.some(j => !j.material_ready);
+
+  const handleStatusChange = async (job, newStatus) => {
+    if (newStatus === 'rescheduled') {
+      setRescheduleModal(job);
+      setNewDate('');
+      setNewShift('Morning');
+    } else {
+      try {
+        await api.put(`/job-orders/${job.job_id}/status?status=${newStatus}`);
+        toast.success(`Status updated to ${newStatus.replace(/_/g, ' ')}`);
+        if (onStatusChange) onStatusChange();
+      } catch (error) {
+        toast.error('Failed to update status');
+      }
+    }
+  };
+
+  const handleRescheduleConfirm = async () => {
+    if (!newDate) {
+      toast.error('Please select a new date');
+      return;
+    }
+    try {
+      await api.put(`/job-orders/${rescheduleModal.job_id}/reschedule`, {
+        new_date: newDate,
+        new_shift: newShift
+      });
+      toast.success('Job rescheduled successfully');
+      setRescheduleModal(null);
+      if (onStatusChange) onStatusChange();
+    } catch (error) {
+      toast.error('Failed to reschedule job');
+    }
+  };
 
   return (
     <div className={`glass rounded-lg border ${
