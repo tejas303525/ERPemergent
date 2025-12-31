@@ -139,7 +139,12 @@ const UnifiedProductionSchedulePage = () => {
       ) : (
         <div className="grid gap-4">
           {schedule.map((day, idx) => (
-            <DayCard key={day.date} day={day} isToday={day.date === new Date().toISOString().split('T')[0]} />
+            <DayCard 
+              key={day.date} 
+              day={day} 
+              isToday={day.date === new Date().toISOString().split('T')[0]} 
+              onStatusChange={loadSchedule}
+            />
           ))}
         </div>
       )}
