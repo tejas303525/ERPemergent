@@ -406,6 +406,19 @@ export default function QuotationsPage() {
                     </SelectContent>
                   </Select>
                 </div>
+                <div>
+                  <Label>Quotation Validity</Label>
+                  <Select value={String(form.validity_days)} onValueChange={(v) => setForm({...form, validity_days: parseInt(v)})}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {VALIDITY_OPTIONS.map(opt => (
+                        <SelectItem key={opt.value} value={String(opt.value)}>{opt.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
 
               {/* Export-specific fields */}
