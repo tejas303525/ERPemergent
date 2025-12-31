@@ -615,12 +615,25 @@ async def create_quotation(data: QuotationCreate, current_user: dict = Depends(g
         items_with_total.append(item_dict)
         subtotal += item_total
     
+    # Calculate VAT and total
+    vat_rate = data.vat_rate if hasattr(data, 'vat_rate') and data.vat_rate else 0
+    vat_amount = data.vat_amount if hasattr(data, 'vat_amount') and data.vat_amount else 0
+    
+    # If VAT is included (local orders with include_vat=True)
+    if data.order_type == 'local' and getattr(data, 'include_vat', True):
+        vat_rate = 0.05  # 5% VAT
+        vat_amount = subtotal * vat_rate
+    
+    total = subtotal + vat_amount
+    
     quotation = Quotation(
         **data.model_dump(exclude={"items"}),
         items=items_with_total,
         pfi_number=pfi_number,
         subtotal=subtotal,
-        total=subtotal,
+        vat_rate=vat_rate,
+        vat_amount=vat_amount,
+        total=total,
         created_by=current_user["id"]
     )
     await db.quotations.insert_one(quotation.model_dump())
