@@ -1,5 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from '../components/ui/button';
+import { Input } from '../components/ui/input';
+import { Label } from '../components/ui/label';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
 import { 
   Calendar, Package, AlertTriangle, Check, Clock, 
   ChevronLeft, ChevronRight, RefreshCw, Factory, Layers
@@ -8,6 +11,14 @@ import { toast } from 'sonner';
 import api from '../lib/api';
 
 const DRUMS_PER_DAY = 600;
+const JOB_STATUSES = [
+  { value: 'pending', label: 'Pending', color: 'bg-gray-500/20 text-gray-400' },
+  { value: 'approved', label: 'Approved', color: 'bg-green-500/20 text-green-400' },
+  { value: 'in_production', label: 'In Production', color: 'bg-blue-500/20 text-blue-400' },
+  { value: 'production_completed', label: 'Production Completed', color: 'bg-emerald-500/20 text-emerald-400' },
+  { value: 'rescheduled', label: 'Rescheduled', color: 'bg-amber-500/20 text-amber-400' },
+  { value: 'ready_for_dispatch', label: 'Ready for Dispatch', color: 'bg-purple-500/20 text-purple-400' },
+];
 
 const UnifiedProductionSchedulePage = () => {
   const [schedule, setSchedule] = useState([]);
