@@ -33,17 +33,29 @@ const BOMManagementPage = () => {
   const loadInitialData = async () => {
     setLoading(true);
     try {
-      const [productsRes, packagingRes, rawItemsRes, packItemsRes] = await Promise.all([
+      const [productsRes, packagingRes, rawItemsRes, packItemsRes, rawProductsRes] = await Promise.all([
         productAPI.getAll('finished_product'),
         packagingAPI.getAll(),
         inventoryItemAPI.getAll('RAW'),
-        inventoryItemAPI.getAll('PACK')
+        inventoryItemAPI.getAll('PACK'),
+        productAPI.getAll('raw_material')
       ]);
       setProducts(productsRes.data || []);
       setPackagingList(packagingRes.data || []);
+      
+      // Combine inventory items with raw material products
+      const rawInventory = rawItemsRes.data || [];
+      const packInventory = packItemsRes.data || [];
+      const rawProducts = (rawProductsRes.data || []).map(p => ({
+        ...p,
+        item_type: 'RAW',
+        source: 'product'
+      }));
+      
       setInventoryItems([
-        ...(rawItemsRes.data || []),
-        ...(packItemsRes.data || [])
+        ...rawInventory,
+        ...packInventory,
+        ...rawProducts
       ]);
     } catch (error) {
       toast.error('Failed to load data');
