@@ -3946,11 +3946,32 @@ async def get_procurement_shortages(current_user: dict = Depends(get_current_use
     # Convert to list and sort by shortage
     shortage_list = sorted(shortages.values(), key=lambda x: x["total_shortage"], reverse=True)
     
+    # Check for existing POs and subtract ordered quantities
+    for shortage in shortage_list:
+        item_id = shortage["item_id"]
+        # Get PO lines for this item that are not completed/cancelled
+        po_lines = await db.purchase_order_lines.find({
+            "item_id": item_id
+        }, {"_id": 0}).to_list(100)
+        
+        total_ordered = 0
+        for line in po_lines:
+            # Get PO status
+            po = await db.purchase_orders.find_one({"id": line.get("po_id")}, {"_id": 0})
+            if po and po.get("status") not in ["REJECTED", "CANCELLED"]:
+                total_ordered += line.get("quantity", 0)
+        
+        shortage["ordered_qty"] = total_ordered
+        shortage["pending_shortage"] = max(0, shortage["total_shortage"] - total_ordered)
+    
+    # Filter out items where pending_shortage is 0
+    filtered_shortages = [s for s in shortage_list if s.get("pending_shortage", s["total_shortage"]) > 0]
+    
     return {
-        "total_shortages": len(shortage_list),
-        "raw_shortages": [s for s in shortage_list if s["item_type"] == "RAW"],
-        "pack_shortages": [s for s in shortage_list if s["item_type"] == "PACK"],
-        "all_shortages": shortage_list
+        "total_shortages": len(filtered_shortages),
+        "raw_shortages": [s for s in filtered_shortages if s["item_type"] == "RAW"],
+        "pack_shortages": [s for s in filtered_shortages if s["item_type"] == "PACK"],
+        "all_shortages": filtered_shortages
     }
 
 @api_router.post("/procurement/auto-generate")
